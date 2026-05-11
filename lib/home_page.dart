@@ -42,6 +42,9 @@ class _HomePageState extends State<HomePage> {
     _dataSubscription = widget.stream.controller.stream.listen((data) {
       _parsePacket(data);
     });
+    
+    
+    
   }
 
   void _parsePacket(List<int> packet) {
@@ -115,7 +118,16 @@ class _HomePageState extends State<HomePage> {
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
           ),
-          SizedBox(height: 20),
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 50),
+            child: ElevatedButton.icon(
+              onPressed: sendMyData,
+              icon: const Icon(Icons.send),
+              label: const Text('Invia Dati di Prova'),
+            ),
+          ),
+          const SizedBox(height: 20),
           
           _buildChart(
             "X-Axis",
@@ -182,4 +194,10 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+  
+  void sendMyData (){
+    List<int> iMieiDati = [123, 65, 66, 67, 125]; // Esempio: {ABC}
+    widget.stream.controllerSend.sink.add(iMieiDati);
+  }
+  
 }

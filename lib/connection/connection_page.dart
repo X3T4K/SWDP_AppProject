@@ -229,7 +229,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
       debugPrint("Raw packet: ${packet.length} bytes --> $packet ");
 
       if ((packetBuffer.length + packet.length) / fixedPacketLength < 1) {
-        debugPrint("pacchetto sburro: ${packet.length}");
+        debugPrint("pacchetto burro: ${packet.length}");
       } else {
         packetBuffer.addAll(packet);
         int numPacketsReceived = (packetBuffer.length / fixedPacketLength).floor();
