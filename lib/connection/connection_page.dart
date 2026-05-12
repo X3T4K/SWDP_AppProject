@@ -2,8 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:smart_wearables_app/connection/stream.dart';
+import 'package:smart_wearables_app/connection/my_ble_manager.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:smart_wearables_app/home_page.dart';
+import 'dart:developer' as developer;
 
 // --- BLE Service and Characteristic UUIDs ---
 // These are the specific addresses for the BLE device RN4871 (Microchip) on the board.
@@ -163,6 +165,8 @@ class _ConnectionPageState extends State<ConnectionPage> {
       // Request MTU (Maximum Transmission Unit):
       final mtu = await flutterReactiveBle.requestMtu(
           deviceId: foundBleDevicesFiltered[index].id, mtu: 512);
+      developer.log('MTU Negoziata: $mtu', name: 'BLE_DEBUG');
+
 
       currentConnectionStream = flutterReactiveBle.connectToDevice(
         id: foundBleDevicesFiltered[index].id,
@@ -206,13 +210,16 @@ class _ConnectionPageState extends State<ConnectionPage> {
   void connectingProcedure(String id) {
     connected = false;
     connecting = true;
-    debugPrint("Connecting to $id...\n");
+    developer.log("Connecting to $id...\n", name: 'BLE_DEBUG');
   }
 
-  void connectionProcedure(String id, ConnectionStateUpdate event){ 
+  void connectionProcedure(String id, ConnectionStateUpdate event){
     connected = true;
     connecting = false;
-    debugPrint("Connected to $id\n");
+    developer.log("Connected to $id\n", name: 'BLE_DEBUG');
+
+    // Inizializza il manager con lo stream corrente
+    MyBleManager().init(incomingBLEStream);
 
     // --- 1. Setup RECEIVE (RX) ---
     _rxCharacteristic = QualifiedCharacteristic(
@@ -240,8 +247,9 @@ class _ConnectionPageState extends State<ConnectionPage> {
 
           // data[0] == '{' (ASCII 123) AND data[19] == '}' (ASCII 125)
           if (data[0] == 123 && data[fixedPacketLength - 1] == 125) {
-            incomingBLEStream.setNum(data);
-            debugPrint("Valid packet received (Type: ${String.fromCharCode(data[1])})");
+            // Usa il Manager per gestire il pacchetto
+            MyBleManager().handleData(data);
+            developer.log("Valid packet received (Type: ${String.fromCharCode(data[1])})", name: 'BLE_DEBUG');
           } else {
             debugPrint("Discarding invalid packet: $data");
           }

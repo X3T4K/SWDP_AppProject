@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:smart_wearables_app/connection/stream.dart';
+import 'package:smart_wearables_app/connection/my_ble_manager.dart';
+import 'package:smart_wearables_app/connection/messages.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:smart_wearables_app/utils/sensor_utils.dart';
 
@@ -48,27 +50,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _parsePacket(List<int> packet) {
-    String type = String.fromCharCode(packet[1]);
+    // Usiamo la factory della nostra classe Messaggio
+    final data = SensorData.fromBytes(packet);
 
-    var byteData = Uint8List.fromList(packet.sublist(2)).buffer.asByteData();
-
-    int rawX = byteData.getInt16(0, Endian.little);
-    int rawY = byteData.getInt16(2, Endian.little);
-    int rawZ = byteData.getInt16(4, Endian.little);
-
-    double gX = rawX * sensitivity;
-    double gY = rawY * sensitivity;
-    double gZ = rawZ * sensitivity;
-
-    if (dataType != type) {
+    if (dataType != data.type) {
       setState(() {
-        dataType = type;
+        dataType = data.type;
       });
     }
 
-    xData.add(ChartData(xCounter, gX));
-    yData.add(ChartData(xCounter, gY));
-    zData.add(ChartData(xCounter, gZ));
+    xData.add(ChartData(xCounter, data.x));
+    yData.add(ChartData(xCounter, data.y));
+    zData.add(ChartData(xCounter, data.z));
     xCounter++;
 
     bool isListFull = xData.length > maxDataPoints;
@@ -90,9 +83,6 @@ class _HomePageState extends State<HomePage> {
       addedDataIndexes: <int>[zData.length - 1],
       removedDataIndexes: isListFull ? <int>[0] : null,
     );
-
-    debugPrint(
-        "Parsed: Type=$dataType, X=${gX.toStringAsFixed(2)}g, Y=${gY.toStringAsFixed(2)}g, Z=${gZ.toStringAsFixed(2)}g");
   }
 
   @override
@@ -122,9 +112,9 @@ class _HomePageState extends State<HomePage> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 50),
             child: ElevatedButton.icon(
-              onPressed: sendMyData,
-              icon: const Icon(Icons.send),
-              label: const Text('Invia Dati di Prova'),
+              onPressed: _sendAck,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Inizia Trasferimento (ACK)'),
             ),
           ),
           const SizedBox(height: 20),
@@ -195,9 +185,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
   
-  void sendMyData (){
-    List<int> iMieiDati = [123, 65, 66, 67, 125]; // Esempio: {ABC}
-    widget.stream.controllerSend.sink.add(iMieiDati);
+  void _sendAck() {
+    // Usiamo la nuova classe AckMessage invece della lista manuale
+    final ack = AckMessage();
+    MyBleManager().sendMessage(ack);
   }
   
 }
