@@ -11,6 +11,7 @@ class MyBleManager {
   MyBleManager._internal();
 
   MyStream? _stream;
+  MyStream? get stream => _stream;
 
   /// Inizializza il manager con lo stream utilizzato per la comunicazione
   void init(MyStream stream) {

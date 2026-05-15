@@ -3,26 +3,34 @@ import 'package:flutter/material.dart';
 import 'package:smart_wearables_app/connection/stream.dart';
 import 'package:smart_wearables_app/connection/my_ble_manager.dart';
 import 'package:smart_wearables_app/connection/messages.dart';
+import 'package:smart_wearables_app/connection/connection_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.title, required this.stream});
+  const HomePage({super.key, required this.title});
   final String title;
-  final MyStream stream;
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  late StreamSubscription _dataSubscription;
+  StreamSubscription? _dataSubscription;
   int _selectedIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _dataSubscription = widget.stream.controller.stream.listen((data) {
-      _parsePacket(data);
-    });
+    _setupStreamListener();
+  }
+
+  void _setupStreamListener() {
+    final stream = MyBleManager().stream;
+    if (stream != null) {
+      _dataSubscription?.cancel();
+      _dataSubscription = stream.controller.stream.listen((data) {
+        _parsePacket(data);
+      });
+    }
   }
 
   void _parsePacket(List<int> packet) {
@@ -38,7 +46,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    _dataSubscription.cancel();
+    _dataSubscription?.cancel();
     super.dispose();
   }
 
@@ -60,6 +68,20 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: Text(widget.title),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        leading: IconButton(
+          icon: const Icon(Icons.bluetooth),
+          onPressed: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const ConnectionPage(title: "Connect Device"),
+              ),
+            );
+            // Al ritorno dalla pagina di connessione, aggiorniamo il listener se lo stream è stato creato
+            _setupStreamListener();
+          },
+          tooltip: 'Connetti Bluetooth',
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.play_arrow),
@@ -109,7 +131,7 @@ class LucePage extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.wb_sunny, size: 80, color: Colors.orange),
+          Icon(Icons.wb_sunny, size: 80, color: Color(0xFF005BFF)),
           SizedBox(height: 20),
           Text(
             'Luce',
@@ -138,7 +160,7 @@ class SuonoPage extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.volume_up, size: 80, color: Colors.blue),
+          Icon(Icons.volume_up, size: 80, color: Color(0xFF06F3FF)),
           SizedBox(height: 20),
           Text(
             'Suono',
@@ -167,7 +189,7 @@ class StressMelatoninaPage extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.spa, size: 80, color: Colors.green),
+          Icon(Icons.spa, size: 80, color: Color(0xFF005BFF)),
           SizedBox(height: 20),
           Text(
             'Stress e Melatonina',

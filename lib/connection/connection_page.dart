@@ -280,15 +280,8 @@ class _ConnectionPageState extends State<ConnectionPage> {
       content: Text("Connected!"),
     ));
 
-    // Go to the next page (HomePage)
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-          builder: (context) => HomePage(
-                title: "Sensors Data",
-                stream: incomingBLEStream,
-              )),
-    ).whenComplete(() => forceDisconnection());
+    // Return to the previous page (HomePage)
+    Navigator.pop(context);
   }
 
   void disconnectionProcedure(String id) {
@@ -304,8 +297,6 @@ class _ConnectionPageState extends State<ConnectionPage> {
     connected = false;
     connecting = false;
     debugPrint("Disconnected from $id\n");
-
-    Navigator.popUntil(context, (route) => route.isFirst);
   }
 
   @override
