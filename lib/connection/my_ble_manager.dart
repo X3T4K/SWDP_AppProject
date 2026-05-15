@@ -1,6 +1,8 @@
 import 'dart:developer' as developer;
 import 'package:smart_wearables_app/connection/stream.dart';
 import 'package:smart_wearables_app/connection/messages.dart';
+import 'package:smart_wearables_app/connection/message_type.dart';
+import 'package:smart_wearables_app/services/notification_service.dart';
 
 class MyBleManager {
   // Singleton pattern
@@ -23,8 +25,27 @@ class MyBleManager {
 
     developer.log("Pacchetto ricevuto: $data", name: 'MyBleManager');
 
+    // Verifichiamo se il pacchetto deve scatenare una notifica
+    _checkForNotificationTriggers(data);
+
     // Invia i dati allo stream per aggiornare la UI
     _stream?.setNum(data);
+  }
+
+  /// Analizza il tipo di messaggio e scatena notifiche predefinite
+  void _checkForNotificationTriggers(List<int> data) {
+    if (data.length < 2) return;
+
+    final int typeByte = data[1];
+
+    // Esempi di trigger basati sui tipi definiti in MsgType
+    if (typeByte == MsgType.battery.description) {
+      NotificationService().showNotification(
+        id: 1,
+        title: "Stato Batteria",
+        body: "Il dispositivo wearable ha inviato un aggiornamento della batteria.",
+      );
+    }
   }
 
   /// Invia un oggetto BleMessage al dispositivo

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:smart_wearables_app/connection/connection_page.dart';
+import 'package:smart_wearables_app/services/notification_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService().init();
   runApp(const MyApp());
 }
 

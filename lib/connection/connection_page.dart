@@ -5,6 +5,7 @@ import 'package:smart_wearables_app/connection/stream.dart';
 import 'package:smart_wearables_app/connection/my_ble_manager.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:smart_wearables_app/home_page.dart';
+import 'package:smart_wearables_app/services/notification_service.dart';
 import 'dart:developer' as developer;
 
 // --- BLE Service and Characteristic UUIDs ---
@@ -91,6 +92,10 @@ class _ConnectionPageState extends State<ConnectionPage> {
     if (statuses[Permission.bluetoothScan] == PermissionStatus.granted &&
         statuses[Permission.bluetoothConnect] == PermissionStatus.granted &&
         statuses[Permission.locationWhenInUse] == PermissionStatus.granted) {
+
+      // Richiedi permessi per le notifiche (Android 13+)
+      await NotificationService().requestPermissions();
+
       permGranted = true;
       if (!scanning) {
         _startScan();
