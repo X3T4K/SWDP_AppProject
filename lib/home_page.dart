@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:smart_wearables_app/connection/stream.dart';
 import 'package:smart_wearables_app/connection/my_ble_manager.dart';
 import 'package:smart_wearables_app/connection/messages.dart';
 import 'package:smart_wearables_app/connection/connection_page.dart';
@@ -20,31 +19,9 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _setupStreamListener();
   }
 
-  void _setupStreamListener() {
-    final stream = MyBleManager().stream;
-    if (stream != null) {
-      _dataSubscription?.cancel();
-      _dataSubscription = stream.controller.stream.listen((data) {
-        _parsePacket(data);
-      });
-    }
-  }
-
-  void _parsePacket(List<int> packet) {
-    // I dati IMU non verranno usati in produzione come richiesto.
-    // In futuro qui gestiremo i dati di luce, suono e stress.
-    try {
-      // final data = SensorData.fromBytes(packet);
-      // Logica futura qui
-    } catch (e) {
-      debugPrint('Errore nel parsing del pacchetto: $e');
-    }
-  }
-
-  @override
+    @override
   void dispose() {
     _dataSubscription?.cancel();
     super.dispose();
@@ -77,8 +54,7 @@ class _HomePageState extends State<HomePage> {
                 builder: (context) => const ConnectionPage(title: "Connect Device"),
               ),
             );
-            // Al ritorno dalla pagina di connessione, aggiorniamo il listener se lo stream è stato creato
-            _setupStreamListener();
+
           },
           tooltip: 'Connetti Bluetooth',
         ),

@@ -232,34 +232,11 @@ class _ConnectionPageState extends State<ConnectionPage> {
         characteristicId: characteristicUuid,
         deviceId: event.deviceId);
 
-    // --- Packet Buffering Logic ---
-    const int fixedPacketLength = 20; // Our custom packet length (in bytes)
-    List<int> packetBuffer = []; // Temporary buffer
-
+    // --- Dynamic Packet Buffering ---
+    // Passiamo i dati grezzi al Manager che gestisce il buffer elastico e i delimitatori {}
     flutterReactiveBle.subscribeToCharacteristic(_rxCharacteristic).listen(
         (packet) {
-      debugPrint("Raw packet: ${packet.length} bytes --> $packet ");
-
-      if ((packetBuffer.length + packet.length) / fixedPacketLength < 1) {
-        debugPrint("pacchetto burro: ${packet.length}");
-      } else {
-        packetBuffer.addAll(packet);
-        int numPacketsReceived = (packetBuffer.length / fixedPacketLength).floor();
-
-        for (int i = 0; i < numPacketsReceived; i++) {
-          List<int> data = packetBuffer.sublist(0, fixedPacketLength);
-          packetBuffer.removeRange(0, fixedPacketLength);
-
-          // data[0] == '{' (ASCII 123) AND data[19] == '}' (ASCII 125)
-          if (data[0] == 123 && data[fixedPacketLength - 1] == 125) {
-            // Usa il Manager per gestire il pacchetto
-            MyBleManager().handleData(data);
-            developer.log("Valid packet received (Type: ${String.fromCharCode(data[1])})", name: 'BLE_DEBUG');
-          } else {
-            debugPrint("Discarding invalid packet: $data");
-          }
-        }
-      }
+      MyBleManager().processRawData(packet);
     }, onError: (dynamic error) {
       debugPrint("ERROR during RX listen: ${error.toString()}\n");
     });

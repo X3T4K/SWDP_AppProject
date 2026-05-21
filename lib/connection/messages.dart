@@ -26,6 +26,26 @@ class AckMessage extends StructuredMessage {
   int get command => 6; // ACK standard
 }
 
+class PageRequestMessage implements BleMessage {
+  final int pageNumber;
+
+  PageRequestMessage(this.pageNumber);
+
+  @override
+  List<int> toBytes() {
+    // Formato: '{' | 'P' (80) | Page_MSB | Page_MID | Page_LSB | '}'
+    // Totale: 6 byte
+    return [
+      123, // '{'
+      80,  // 'P'
+      (pageNumber >> 16) & 0xFF,
+      (pageNumber >> 8) & 0xFF,
+      pageNumber & 0xFF,
+      125  // '}'
+    ];
+  }
+}
+
 class StartSensorMessage extends StructuredMessage {
   final MsgType type;
   StartSensorMessage(this.type);
