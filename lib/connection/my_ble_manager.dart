@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:smart_wearables_app/connection/stream.dart';
 import 'package:smart_wearables_app/connection/messages.dart';
-import 'package:smart_wearables_app/connection/message_type.dart';
+import 'package:smart_wearables_app/services/data_parsing.dart';
 
 class MyBleManager {
   // Singleton pattern
@@ -12,6 +12,15 @@ class MyBleManager {
 
   MyStream? _stream;
   MyStream? get stream => _stream;
+
+  bool get isConnected => _stream != null;
+
+  void clearConnection() {
+    _stream = null;
+  }
+
+  final StreamController<DumpType> _dumpCompletedController = StreamController<DumpType>.broadcast();
+  Stream<DumpType> get onDumpCompleted => _dumpCompletedController.stream;
 
   static const int startByte = 0x7B; // '{'
   static const int endByte = 0x7D;   // '}'
@@ -38,6 +47,8 @@ class MyBleManager {
   final List<int> _rxBuffer = [];
   
   // Page Dumping State
+  DumpType _currentDumpType = DumpType.none;
+  final List<int> _accumulatedDumpData = [];
   int _currentPage = 0;
   final List<int> _pageData = [];
   static const int pageSize = 4096;
@@ -179,9 +190,12 @@ class MyBleManager {
         developer.log("EOD Ricevuto. Scaricamento completato per questa partizione!", name: 'BleManager');
         _waitingPage = false;
         _pageTimeoutTimer?.cancel();
-
-        // Qui puoi lanciare un evento/callback alla tua UI Flutter
-        // per avvisare l'utente che il download è terminato.
+        
+        final completedType = _currentDumpType;
+        DataParser.processFullDump(completedType, _accumulatedDumpData).then((_) {
+          _dumpCompletedController.add(completedType);
+        });
+        _currentDumpType = DumpType.none;
         break;
 
       default:
@@ -245,12 +259,16 @@ class MyBleManager {
 
 
   void startSpectrometerDump() {
+    _currentDumpType = DumpType.spectrometer;
+    _accumulatedDumpData.clear();
     _partitionOffset = 0; // Parte dal blocco logico 0
     _currentPage = 0;     // Indice relativo alla partizione
     _requestPage(_partitionOffset + _currentPage);
   }
 
   void startMicrophoneDump() {
+    _currentDumpType = DumpType.microphone;
+    _accumulatedDumpData.clear();
     _partitionOffset = 65536; // 1024 blocchi * 64 pagine
     _currentPage = 0;         // Indice relativo alla partizione
     _requestPage(_partitionOffset + _currentPage);
@@ -317,12 +335,12 @@ class MyBleManager {
 
     developer.log("Page ${_partitionOffset + _currentPage} verified successfully!", name: 'BleManager');
 
-    // SAVE PAGE HERE
+    // Salvataggio in memoria dei dati della pagina
+    _accumulatedDumpData.addAll(_pageData);
 
     _currentPage++;
     _requestPage(_partitionOffset + _currentPage);
   }
-
 
   void sendMessage(BleMessage message) {
     if (_stream != null) {

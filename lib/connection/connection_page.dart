@@ -4,7 +4,6 @@ import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:smart_wearables_app/connection/stream.dart';
 import 'package:smart_wearables_app/connection/my_ble_manager.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:smart_wearables_app/home_page.dart';
 import 'package:smart_wearables_app/services/notification_service.dart';
 import 'dart:developer' as developer;
 
@@ -262,6 +261,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
   }
 
   void disconnectionProcedure(String id) {
+    MyBleManager().clearConnection();
     if (connected) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Disconnected!"),
@@ -285,6 +285,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
   void forceDisconnection() async {
     if (connected) {
       connection.cancel();
+      MyBleManager().clearConnection();
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Disconnected!"),
       ));
