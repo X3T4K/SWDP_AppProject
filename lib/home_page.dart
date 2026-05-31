@@ -126,8 +126,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isConnected = MyBleManager().isConnected;
-
     // Filtra i dati per i grafici
     final filteredSpecData = _filterData(_spectrometerData);
     final filteredMicData = _filterData(_microphoneData);
@@ -149,209 +147,233 @@ class _HomePageState extends State<HomePage> {
       ),
     ];
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF3F6FA),
-      appBar: AppBar(
-        title: Text(
-          widget.title,
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-        ),
-        elevation: 0,
-        backgroundColor: const Color(0xFF005BFF),
-        leading: IconButton(
-          icon: Icon(
-            isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
-            color: isConnected ? const Color(0xFF06F3FF) : Colors.white60,
-            size: 28,
-          ),
-          onPressed: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ConnectionPage(title: "Connetti Dispositivo"),
+    return ValueListenableBuilder<bool>(
+      valueListenable: MyBleManager().isConnectedNotifier,
+      builder: (context, isConnected, child) {
+        return Scaffold(
+          backgroundColor: const Color(0xFFF3F6FA),
+          appBar: AppBar(
+            title: Text(
+              widget.title,
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            elevation: 0,
+            backgroundColor: const Color(0xFF005BFF),
+            leading: IconButton(
+              icon: Icon(
+                isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                color: isConnected ? const Color(0xFF06F3FF) : Colors.white60,
+                size: 28,
               ),
-            );
-            _loadLocalData(); // Ricarica dati al ritorno
-          },
-          tooltip: 'Connessione Bluetooth',
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: _loadLocalData,
-            tooltip: 'Ricarica dati locali',
-          ),
-          if (isConnected)
-            IconButton(
-              icon: const Icon(Icons.delete_forever, color: Colors.white70),
               onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text("Cancella tutti i dati?"),
-                    content: const Text("Tutte le misurazioni salvate localmente verranno rimosse permanentemente."),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Annulla")),
-                      TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Cancella")),
-                    ],
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ConnectionPage(title: "Connetti Dispositivo"),
                   ),
                 );
-                if (confirm == true) {
-                  await StorageService().clearAllData();
-                  _loadLocalData();
-                }
+                _loadLocalData(); // Ricarica dati al ritorno
               },
-              tooltip: 'Elimina tutti i dati',
+              tooltip: 'Connessione Bluetooth',
             ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // 1. Banner di Stato Connessione (Se non connesso)
-          if (!isConnected)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.orange.shade800, Colors.amber.shade700],
-                ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.white),
+                onPressed: _loadLocalData,
+                tooltip: 'Ricarica dati locali',
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
-                      SizedBox(width: 8),
-                      Text(
-                        "Dispositivo non connesso",
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              if (isConnected)
+                IconButton(
+                  icon: const Icon(Icons.delete_forever, color: Colors.white70),
+                  onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text("Cancella tutti i dati?"),
+                        content: const Text("Tutte le misurazioni salvate localmente verranno rimosse permanentemente."),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Annulla")),
+                          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Cancella")),
+                        ],
                       ),
-                    ],
-                  ),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      backgroundColor: Colors.white24,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    ),
-                    icon: const Icon(Icons.bluetooth, size: 16),
-                    label: const Text("Connetti", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                    onPressed: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const ConnectionPage(title: "Connetti Dispositivo"),
-                        ),
-                      );
+                    );
+                    if (confirm == true) {
+                      await StorageService().clearAllData();
                       _loadLocalData();
-                    },
-                  ),
-                ],
-              ),
-            ),
-
-          // 2. Banner di Stato Download attivo
-          if (_isDownloadingDump)
-            Container(
-              color: Colors.teal.shade500,
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              child: const Row(
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    }
+                  },
+                  tooltip: 'Elimina tutti i dati',
+                ),
+            ],
+          ),
+          body: Column(
+            children: [
+              // 1. Banner di Stato Connessione (Se non connesso)
+              if (!isConnected)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.orange.shade800, Colors.amber.shade700],
                     ),
                   ),
-                  SizedBox(width: 12),
-                  Text(
-                    "Scaricamento dei dati in corso... Attendi completamento",
-                    style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
-                  ),
-                ],
-              ),
-            ),
-
-          // 3. Selettore Periodo di Tempo (Visibile solo se ci sono dati nelle prime due schede)
-          if (_selectedIndex < 2 && (_spectrometerData.isNotEmpty || _microphoneData.isNotEmpty))
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Card(
-                elevation: 0,
-                color: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        "Periodo Grafico:",
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                      const Expanded(
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "Dispositivo non connesso",
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      Row(
-                        children: [
-                          _buildPeriodButton('1h', '1 Ora'),
-                          const SizedBox(width: 4),
-                          _buildPeriodButton('6h', '6 Ore'),
-                          const SizedBox(width: 4),
-                          _buildPeriodButton('24h', '24 Ore'),
-                          const SizedBox(width: 4),
-                          _buildPeriodButton('All', 'Tutti'),
-                        ],
-                      )
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          backgroundColor: Colors.white24,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        ),
+                        icon: const Icon(Icons.bluetooth, size: 16),
+                        label: const Text("Connetti", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ConnectionPage(title: "Connetti Dispositivo"),
+                            ),
+                          );
+                          _loadLocalData();
+                        },
+                      ),
                     ],
                   ),
                 ),
-              ),
-            ),
 
-          // 4. Pagina principale
-          Expanded(child: pages[_selectedIndex]),
-        ],
-      ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              spreadRadius: 2,
-            )
-          ],
-        ),
-        child: BottomNavigationBar(
-          elevation: 0,
-          backgroundColor: Colors.white,
-          items: const <BottomNavigationBarItem>[
-            BottomNavigationBarItem(
-              icon: Icon(Icons.wb_sunny_outlined),
-              activeIcon: Icon(Icons.wb_sunny, color: Color(0xFF005BFF)),
-              label: 'Luce',
+              // 2. Banner di Stato Download attivo
+              if (_isDownloadingDump)
+                Container(
+                  color: Colors.teal.shade500,
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                  child: const Row(
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          "Scaricamento dei dati in corso... Attendi completamento",
+                          style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // 3. Selettore Periodo di Tempo (Visibile solo se ci sono dati nelle prime due schede)
+              if (_selectedIndex < 2 && (_spectrometerData.isNotEmpty || _microphoneData.isNotEmpty))
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: Card(
+                    elevation: 0,
+                    color: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            child: Text(
+                              "Periodo Grafico:",
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black54),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3F6FA),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(child: _buildPeriodButton('1h', '1 Ora')),
+                                const SizedBox(width: 4),
+                                Expanded(child: _buildPeriodButton('6h', '6 Ore')),
+                                const SizedBox(width: 4),
+                                Expanded(child: _buildPeriodButton('24h', '24 Ore')),
+                                const SizedBox(width: 4),
+                                Expanded(child: _buildPeriodButton('All', 'Tutti')),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+              // 4. Pagina principale
+              Expanded(child: pages[_selectedIndex]),
+            ],
+          ),
+          bottomNavigationBar: Container(
+            decoration: BoxDecoration(
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  spreadRadius: 2,
+                )
+              ],
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.volume_up_outlined),
-              activeIcon: Icon(Icons.volume_up, color: Color(0xFF005BFF)),
-              label: 'Suono',
+            child: BottomNavigationBar(
+              elevation: 0,
+              backgroundColor: Colors.white,
+              items: const <BottomNavigationBarItem>[
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.wb_sunny_outlined),
+                  activeIcon: Icon(Icons.wb_sunny, color: Color(0xFF005BFF)),
+                  label: 'Luce',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.volume_up_outlined),
+                  activeIcon: Icon(Icons.volume_up, color: Color(0xFF005BFF)),
+                  label: 'Suono',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.spa_outlined),
+                  activeIcon: Icon(Icons.spa, color: Color(0xFF005BFF)),
+                  label: 'Salute & Sonno',
+                ),
+              ],
+              currentIndex: _selectedIndex,
+              selectedItemColor: const Color(0xFF005BFF),
+              unselectedItemColor: Colors.black54,
+              selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
+              onTap: _onItemTapped,
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.spa_outlined),
-              activeIcon: Icon(Icons.spa, color: Color(0xFF005BFF)),
-              label: 'Salute & Sonno',
-            ),
-          ],
-          currentIndex: _selectedIndex,
-          selectedItemColor: const Color(0xFF005BFF),
-          unselectedItemColor: Colors.black54,
-          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
-          onTap: _onItemTapped,
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -363,18 +385,30 @@ class _HomePageState extends State<HomePage> {
           _selectedPeriod = periodCode;
         });
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFF005BFF) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF005BFF).withOpacity(0.2),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : null,
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.white : Colors.black54,
+            color: isSelected ? Colors.white : Colors.black87,
             fontWeight: FontWeight.bold,
-            fontSize: 12,
+            fontSize: 13,
           ),
         ),
       ),
@@ -590,7 +624,13 @@ class LucePage extends StatelessWidget {
               children: [
                 Icon(icon, color: color, size: 20),
                 const SizedBox(width: 4),
-                Text(label, style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500)),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -804,14 +844,17 @@ class SuonoPage extends StatelessWidget {
                     child: Icon(Icons.volume_up, color: Colors.teal.shade800, size: 28),
                   ),
                   const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text("Volume Medio", style: TextStyle(fontSize: 12, color: Colors.black54)),
-                      const SizedBox(height: 4),
-                      Text("$db dB", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)),
-                      Text(rating, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ratingColor)),
-                    ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text("Volume Medio", style: TextStyle(fontSize: 12, color: Colors.black54), overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 4),
+                        Text("$db dB", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)),
+                        Text(rating, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ratingColor), overflow: TextOverflow.ellipsis),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -841,20 +884,24 @@ class SuonoPage extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text("Picco Rilevato", style: TextStyle(fontSize: 12, color: Colors.black54)),
-                      const SizedBox(height: 4),
-                      Text(
-                        hasPeak ? "SÌ (Anomalo)" : "NO (Normale)",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: hasPeak ? Colors.red.shade800 : Colors.green.shade800,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text("Picco Rilevato", style: TextStyle(fontSize: 12, color: Colors.black54), overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 4),
+                        Text(
+                          hasPeak ? "SÌ (Anomalo)" : "NO (Normale)",
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: hasPeak ? Colors.red.shade800 : Colors.green.shade800,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ),

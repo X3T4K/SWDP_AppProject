@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'package:flutter/foundation.dart';
+import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:smart_wearables_app/connection/stream.dart';
 import 'package:smart_wearables_app/connection/messages.dart';
 import 'package:smart_wearables_app/services/data_parsing.dart';
@@ -10,17 +12,40 @@ class MyBleManager {
   factory MyBleManager() => _instance;
   MyBleManager._internal();
 
+  // --- BLE Service and Characteristic UUIDs ---
+  static final Uuid serviceUuid = Uuid.parse("49535343-FE7D-4AE5-8FA9-9FAFD205E455");
+  static final Uuid characteristicUuid = Uuid.parse("49535343-1E4D-4BD9-BA61-23C647249616"); // RX
+  static final Uuid characteristicUuidTX = Uuid.parse("49535343-8841-43F4-A8D4-ECBE34729BB3"); // TX
+
+  final FlutterReactiveBle _ble = FlutterReactiveBle();
+
+  // Stream Subscriptions
+  StreamSubscription<ConnectionStateUpdate>? _connectionSubscription;
+  StreamSubscription? _rxSubscription;
+  StreamSubscription? _txSubscription;
+
+  // Connection State Notifiers (Observable by UI)
+  final ValueNotifier<bool> isConnectedNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> isConnectingNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> isReconnectingNotifier = ValueNotifier<bool>(false);
+
+  // Connection State Variables
+  String? _connectedDeviceId;
+  bool _isConnected = false;
+  bool _isConnecting = false;
+  bool _isReconnecting = false;
+
+  // Retry / Recovery Parameters
+  int _reconnectAttempts = 0;
+  final int _maxReconnectAttempts = 3;
+
   MyStream? _stream;
   MyStream? get stream => _stream;
 
-  bool get isConnected => _stream != null;
-
-  void clearConnection() {
-    _stream = null;
-  }
-
-  final StreamController<DumpType> _dumpCompletedController = StreamController<DumpType>.broadcast();
-  Stream<DumpType> get onDumpCompleted => _dumpCompletedController.stream;
+  bool get isConnected => _isConnected;
+  bool get isConnecting => _isConnecting;
+  bool get isReconnecting => _isReconnecting;
+  String? get connectedDeviceId => _connectedDeviceId;
 
   static const int startByte = 0x7B; // '{'
   static const int endByte = 0x7D;   // '}'
@@ -28,13 +53,12 @@ class MyBleManager {
   static const int typeData = 0x44; // 'D'
   static const int typeEop  = 0x45; // 'E'
   static const int typeEod  = 0x46; // 'F' - End Of Dump
+
   // Gestione Partizioni
   int _partitionOffset = 0;
   int? _receivedPageCrc;
 
   static const int headerSize = 4;
-// { TYPE LEN_H LEN_L
-
   static const int crcSize = 2;
   static const int footerSize = 1;
 
@@ -54,11 +78,214 @@ class MyBleManager {
   static const int pageSize = 4096;
   Timer? _pageTimeoutTimer;
 
-  void init(MyStream stream) {
-    _stream = stream;    // Ascolta lo stream dei dati in arrivo e processali
-    _stream!.controller.stream.listen((data) {
-      processRawData(data as List<int>);
+  final StreamController<DumpType> _dumpCompletedController = StreamController<DumpType>.broadcast();
+  Stream<DumpType> get onDumpCompleted => _dumpCompletedController.stream;
+
+  // Connette a un dispositivo specifico
+  Future<void> connect(String deviceId) async {
+    if (_isConnected) {
+      developer.log("Già connesso al dispositivo $_connectedDeviceId", name: 'BLE_DEBUG');
+      return;
+    }
+
+    _isConnecting = true;
+    _connectedDeviceId = deviceId;
+    _updateNotifiers();
+    developer.log("Avvio connessione al dispositivo: $deviceId", name: 'BLE_DEBUG');
+
+    try {
+      // Negoziazione MTU consigliata per elevate prestazioni e stabilità del dump
+      developer.log("Negoziazione MTU a 512 byte...", name: 'BLE_DEBUG');
+      final mtu = await _ble.requestMtu(deviceId: deviceId, mtu: 512);
+      developer.log("MTU Negoziata con successo: $mtu", name: 'BLE_DEBUG');
+    } catch (e) {
+      developer.log("Avviso: Errore negoziazione MTU (proseguo comunque): $e", name: 'BLE_DEBUG');
+    }
+
+    _connectionSubscription?.cancel();
+    _connectionSubscription = _ble.connectToDevice(
+      id: deviceId,
+      connectionTimeout: const Duration(seconds: 8),
+    ).listen((event) {
+      _handleConnectionStateUpdate(event);
+    }, onError: (Object error) {
+      developer.log("Errore critico durante la connessione: $error", name: 'BLE_DEBUG');
+      _handleDisconnection(deviceId);
     });
+  }
+
+  // Forza la disconnessione completa e pulisce le risorse
+  Future<void> disconnect() async {
+    developer.log("Forzatura disconnessione manuale...", name: 'BLE_DEBUG');
+    _connectedDeviceId = null;
+    _isReconnecting = false;
+    _reconnectAttempts = 0;
+    _isConnected = false;
+    _isConnecting = false;
+    
+    _teardownDataStreams();
+    _pageTimeoutTimer?.cancel();
+    _waitingPage = false;
+    
+    await _connectionSubscription?.cancel();
+    _connectionSubscription = null;
+    _updateNotifiers();
+    developer.log("Disconnesso e risorse liberate completamente.", name: 'BLE_DEBUG');
+  }
+
+  // Gestione interna degli stati di connessione BLE
+  void _handleConnectionStateUpdate(ConnectionStateUpdate event) {
+    final state = event.connectionState;
+    final id = event.deviceId;
+    developer.log("Aggiornamento Stato Connessione BLE per $id: $state", name: 'BLE_DEBUG');
+
+    switch (state) {
+      case DeviceConnectionState.connecting:
+        _isConnected = false;
+        _isConnecting = true;
+        _updateNotifiers();
+        break;
+
+      case DeviceConnectionState.connected:
+        developer.log("Stato: Connesso fisicamente a $id. Attendo 2 secondi prima di abbonarmi alle caratteristiche per permettere allo stack BLE del sistema operativo di completare la scoperta dei servizi ed evitare errori di scrittura GATT...", name: 'BLE_DEBUG');
+        _isConnected = true;
+        _isConnecting = false;
+        _isReconnecting = false;
+        _reconnectAttempts = 0; // Azzera i tentativi di riconnessione a link layer attivo
+        _updateNotifiers();
+        
+        // Ritardo di sicurezza di 2 secondi consigliato per evitare errori "Cannot write client characteristic config descriptor (code 3)"
+        Future.delayed(const Duration(seconds: 2), () {
+          if (_isConnected && _connectedDeviceId == id) {
+            _setupDataStreams(id);
+          } else {
+            developer.log("Rilevata disconnessione o cambio dispositivo durante l'attesa del setup dei canali dati.", name: 'BLE_DEBUG');
+          }
+        });
+        break;
+
+      case DeviceConnectionState.disconnected:
+        developer.log("Stato: Disconnesso da $id", name: 'BLE_DEBUG');
+        _handleDisconnection(id);
+        break;
+      
+      case DeviceConnectionState.disconnecting:
+        developer.log("Stato: Disconnessione in corso da $id", name: 'BLE_DEBUG');
+        break;
+    }
+  }
+
+  // Configura i canali RX e TX
+  void _setupDataStreams(String deviceId) {
+    _teardownDataStreams();
+
+    _stream = MyStream();
+    developer.log("Inizializzazione canali dati RX e TX...", name: 'BLE_DEBUG');
+
+    // 1. Setup RECEIVE (RX)
+    final rxCharacteristic = QualifiedCharacteristic(
+      serviceId: serviceUuid,
+      characteristicId: characteristicUuid,
+      deviceId: deviceId,
+    );
+
+    developer.log("Sottoscrizione alla caratteristica RX per ricevere dati...", name: 'BLE_DEBUG');
+    _rxSubscription = _ble.subscribeToCharacteristic(rxCharacteristic).listen(
+      (packet) {
+        processRawData(packet);
+      },
+      onError: (dynamic error) {
+        developer.log("Errore nello stream RX: $error", name: 'BLE_DEBUG');
+      },
+    );
+
+    // 2. Setup TRANSMIT (TX)
+    final txCharacteristic = QualifiedCharacteristic(
+      serviceId: serviceUuid,
+      characteristicId: characteristicUuidTX,
+      deviceId: deviceId,
+    );
+
+    developer.log("Sottoscrizione allo stream TX per inviare dati...", name: 'BLE_DEBUG');
+    _txSubscription = _stream!.controllerSend.stream.listen(
+      (event) async {
+        try {
+          await _ble.writeCharacteristicWithoutResponse(txCharacteristic, value: event);
+        } catch (e) {
+          developer.log("Errore durante l'invio TX: $e", name: 'BLE_DEBUG');
+        }
+      },
+      onError: (dynamic error) {
+        developer.log("Errore nello stream di invio TX: $error", name: 'BLE_DEBUG');
+      },
+    );
+  }
+
+  // Libera le risorse dei flussi dati (Teardown parziale consigliato per evitare leaks)
+  void _teardownDataStreams() {
+    developer.log("Teardown parziale: chiusura ed eliminazione stream dati RX/TX...", name: 'BLE_DEBUG');
+    _rxSubscription?.cancel();
+    _rxSubscription = null;
+    _txSubscription?.cancel();
+    _txSubscription = null;
+    _stream = null;
+  }
+
+  // Gestione disconnessione accidentale con meccanismo di Auto-Recovery (Backoff e Retry)
+  void _handleDisconnection(String deviceId) async {
+    _isConnected = false;
+    _isConnecting = false;
+    _teardownDataStreams();
+    _pageTimeoutTimer?.cancel();
+    _waitingPage = false;
+    _updateNotifiers();
+
+    if (_connectedDeviceId == null) {
+      // È una disconnessione manuale, non tentare il ripristino
+      return;
+    }
+
+    if (_isReconnecting) return; // Riconnessione già in esecuzione
+
+    if (_reconnectAttempts < _maxReconnectAttempts) {
+      _reconnectAttempts++;
+      _isReconnecting = true;
+      _updateNotifiers();
+      developer.log("Connessione persa accidentalmente! Avvio Auto-Recovery...", name: 'BLE_DEBUG');
+      developer.log("Tentativo di riconnessione $_reconnectAttempts di $_maxReconnectAttempts in corso...", name: 'BLE_DEBUG');
+
+      // Pausa di Backoff di 2 secondi per far stabilizzare lo stack BLE di Android e del modulo RN4871
+      developer.log("Pausa di Backoff: attesa di 2 secondi...", name: 'BLE_DEBUG');
+      await Future.delayed(const Duration(seconds: 2));
+
+      _isReconnecting = false;
+      _updateNotifiers();
+
+      if (_connectedDeviceId != null) {
+        developer.log("Riprovo la connessione a $deviceId...", name: 'BLE_DEBUG');
+        connect(_connectedDeviceId!);
+      }
+    } else {
+      developer.log("Tentativi di riconnessione esauriti. Disconnessione definitiva.", name: 'BLE_DEBUG');
+      _connectedDeviceId = null;
+      _isReconnecting = false;
+      _reconnectAttempts = 0;
+      _connectionSubscription?.cancel();
+      _connectionSubscription = null;
+      _updateNotifiers();
+    }
+  }
+
+  // Aggiorna i notifiers per informare la UI
+  void _updateNotifiers() {
+    isConnectedNotifier.value = _isConnected;
+    isConnectingNotifier.value = _isConnecting;
+    isReconnectingNotifier.value = _isReconnecting;
+  }
+
+  // Metodo per la compatibilità con il codice esistente
+  void init(MyStream stream) {
+    developer.log("Metodo init chiamato esternamente (ereditato). Flussi gestiti internamente.", name: 'BLE_DEBUG');
   }
 
   /// Entry point for raw bytes from BLE
@@ -69,7 +296,6 @@ class MyBleManager {
 
   void _extractPackets() {
     while (true) {
-
       // Prevent infinite growth
       if (_rxBuffer.length > maxBufferSize) {
         developer.log("RX buffer overflow. Clearing buffer.", name: 'BleManager');
@@ -138,11 +364,8 @@ class MyBleManager {
     }
   }
 
-
   void _handlePacket(List<int> packet) {
-
     int type = packet[1];
-
     int payloadLength =
     (packet[2] << 8) |
     packet[3];
@@ -159,7 +382,6 @@ class MyBleManager {
     }
 
     switch (type) {
-
       case typeData:
         if (_pageData.length + payload.length > pageSize) {
           developer.log("Page overflow. Restarting page.", name: 'BleManager');
@@ -199,47 +421,34 @@ class MyBleManager {
         break;
 
       default:
-
         developer.log(
             "Unknown packet type: $type",
             name: 'BleManager');
-
         break;
     }
   }
+
   int _crc16(List<int> data) {
-
     int crc = 0xFFFF;
-
     for (final b in data) {
-
       crc ^= (b << 8);
-
       for (int i = 0; i < 8; i++) {
-
         if ((crc & 0x8000) != 0) {
           crc = (crc << 1) ^ 0x1021;
         } else {
           crc <<= 1;
         }
-
         crc &= 0xFFFF;
       }
     }
-
     return crc;
   }
 
   int _crc32(List<int> data) {
-
     int crc = 0xFFFFFFFF;
-
     for (final byte in data) {
-
       crc ^= byte;
-
       for (int i = 0; i < 8; i++) {
-
         if ((crc & 1) != 0) {
           crc = (crc >> 1) ^ 0xEDB88320;
         } else {
@@ -247,7 +456,6 @@ class MyBleManager {
         }
       }
     }
-
     return crc ^ 0xFFFFFFFF;
   }
 
@@ -255,8 +463,6 @@ class MyBleManager {
     _currentPage = 0;
     _requestPage(_partitionOffset + _currentPage);
   }
-
-
 
   void startSpectrometerDump() {
     _currentDumpType = DumpType.spectrometer;
@@ -274,7 +480,6 @@ class MyBleManager {
     _requestPage(_partitionOffset + _currentPage);
   }
 
-  // Modifica _requestPage per usare l'indirizzo assoluto
   void _requestPage(int absolutePageNumber) {
     if (_waitingPage) return;
 
@@ -296,13 +501,10 @@ class MyBleManager {
   }
 
   void _verifyAndProcessPage() {
-
     _waitingPage = false;
-
     _pageTimeoutTimer?.cancel();
 
     if (_pageData.length != pageSize) {
-
       developer.log(
           "Page size mismatch "
               "(${_pageData.length}/$pageSize). "
@@ -314,7 +516,6 @@ class MyBleManager {
     }
 
     if (_receivedPageCrc == null) {
-
       developer.log(
           "Missing page CRC.",
           name: 'BleManager');

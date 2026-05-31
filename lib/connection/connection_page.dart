@@ -1,17 +1,9 @@
 import 'dart:async'; 
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
-import 'package:smart_wearables_app/connection/stream.dart';
-import 'package:smart_wearables_app/connection/my_ble_manager.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:smart_wearables_app/connection/my_ble_manager.dart';
 import 'package:smart_wearables_app/services/notification_service.dart';
-import 'dart:developer' as developer;
-
-// --- BLE Service and Characteristic UUIDs ---
-// These are the specific addresses for the BLE device RN4871 (Microchip) on the board.
-Uuid serviceUuid = Uuid.parse("49535343-FE7D-4AE5-8FA9-9FAFD205E455");
-Uuid characteristicUuid = Uuid.parse("49535343-1E4D-4BD9-BA61-23C647249616"); // RX Characteristic 
-Uuid characteristicUuidTX = Uuid.parse("49535343-8841-43F4-A8D4-ECBE34729BB3"); // TX Characteristic 
 
 // --- 1. Widget Definition ---
 class ConnectionPage extends StatefulWidget {
@@ -30,22 +22,11 @@ class _ConnectionPageState extends State<ConnectionPage> {
   final flutterReactiveBle = FlutterReactiveBle();
 
   late StreamSubscription<DiscoveredDevice> scanStream;
-  late Stream<ConnectionStateUpdate> currentConnectionStream;
-  late StreamSubscription<ConnectionStateUpdate> connection;
-
-  // The RX (Receive) and TX (Transmit) characteristics of the connected device
-  late QualifiedCharacteristic _rxCharacteristic;
-  late QualifiedCharacteristic _txCharacteristic;
-
   List<DiscoveredDevice> foundBleDevices = []; // All found devices
   List<DiscoveredDevice> foundBleDevicesFiltered = []; // Only the ones matching the filter
 
   bool permGranted = false;
   bool scanning = false;
-  bool connecting = false;
-  bool connected = false;
-
-  MyStream incomingBLEStream = MyStream();
 
   void refreshScreen() {
     setState(() {});
@@ -126,7 +107,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
       refreshScreen();
 
       scanStream = flutterReactiveBle
-          .scanForDevices(withServices: [/*serviceUuid*/])
+          .scanForDevices(withServices: [])
           .listen((device) {
         if (foundBleDevices.every((element) => element.id != device.id)) {
           foundBleDevices.add(device);
@@ -155,190 +136,149 @@ class _ConnectionPageState extends State<ConnectionPage> {
 
   // --- Connection Logic ---
 
-  void _startConnection(int index) async {
+  void _startConnection(int index) {
     if (scanning) {
-      scanStream.cancel();
-      scanning = false;
+      _stopScan();
     }
+    // Avvia la connessione tramite il Singleton centralizzato
+    MyBleManager().connect(foundBleDevicesFiltered[index].id);
+  }
 
-    if (!connected) {
-      setState(() {
-        connecting = true;
-      });
-
-      // Request MTU (Maximum Transmission Unit):
-      final mtu = await flutterReactiveBle.requestMtu(
-          deviceId: foundBleDevicesFiltered[index].id, mtu: 512);
-      developer.log('MTU Negoziata: $mtu', name: 'BLE_DEBUG');
-
-
-      currentConnectionStream = flutterReactiveBle.connectToDevice(
-        id: foundBleDevicesFiltered[index].id,
-        connectionTimeout: const Duration(seconds: 5),
-      );
-
-      connection = currentConnectionStream.listen((event) {
-        var id = event.deviceId.toString();
-        switch (event.connectionState) {
-          case DeviceConnectionState.connecting:
-            {
-              connectingProcedure(id);
-              break;
-            }
-          case DeviceConnectionState.connected:
-            {
-              connectionProcedure(id, event);
-              break;
-            }
-          case DeviceConnectionState.disconnected:
-            {
-              disconnectionProcedure(id);
-              break;
-            }
-          default:
-        }
-        refreshScreen();
-      }, onError: (Object error) {
-        connecting = false;
-        connected = false;
+  void _onConnectionChanged() {
+    if (MyBleManager().isConnected) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("Connection failed!"),
+          content: Text("Connessione stabilita con successo!"),
+          backgroundColor: Colors.green,
         ));
-        debugPrint("ERROR during connection: $error \n");
-        _startScan();
-        refreshScreen();
-      });
+        Navigator.pop(context); // Ritorna alla HomePage
+      }
     }
-  }
-
-  void connectingProcedure(String id) {
-    connected = false;
-    connecting = true;
-    developer.log("Connecting to $id...\n", name: 'BLE_DEBUG');
-  }
-
-  void connectionProcedure(String id, ConnectionStateUpdate event){
-    connected = true;
-    connecting = false;
-    developer.log("Connected to $id\n", name: 'BLE_DEBUG');
-
-    // Inizializza il manager con lo stream corrente
-    MyBleManager().init(incomingBLEStream);
-
-    // --- 1. Setup RECEIVE (RX) ---
-    _rxCharacteristic = QualifiedCharacteristic(
-        serviceId: serviceUuid,
-        characteristicId: characteristicUuid,
-        deviceId: event.deviceId);
-
-    // --- Dynamic Packet Buffering ---
-    // Passiamo i dati grezzi al Manager che gestisce il buffer elastico e i delimitatori {}
-    flutterReactiveBle.subscribeToCharacteristic(_rxCharacteristic).listen(
-        (packet) {
-      MyBleManager().processRawData(packet);
-    }, onError: (dynamic error) {
-      debugPrint("ERROR during RX listen: ${error.toString()}\n");
-    });
-
-    // --- 2. Setup TRANSMIT (TX) ---
-    _txCharacteristic = QualifiedCharacteristic(
-        serviceId: serviceUuid,
-        characteristicId: characteristicUuidTX,
-        deviceId: event.deviceId);
-
-    incomingBLEStream.controllerSend.stream.listen((event) async {
-      flutterReactiveBle
-          .writeCharacteristicWithoutResponse(_txCharacteristic, value: event);
-    });
-
-    // --- 3. Navigation ---
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text("Connected!"),
-    ));
-
-    // Return to the previous page (HomePage)
-    Navigator.pop(context);
-  }
-
-  void disconnectionProcedure(String id) {
-    MyBleManager().clearConnection();
-    if (connected) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text("Disconnected!"),
-      ));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text("Not connected!"),
-      ));
-    }
-    connected = false;
-    connecting = false;
-    debugPrint("Disconnected from $id\n");
   }
 
   @override
   void initState() {
     super.initState();
     _askPermissions();
+    
+    // Registra un listener sul singleton per tornare alla home alla connessione avvenuta
+    MyBleManager().isConnectedNotifier.addListener(_onConnectionChanged);
   }
 
-  void forceDisconnection() async {
-    if (connected) {
-      connection.cancel();
-      MyBleManager().clearConnection();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text("Disconnected!"),
-      ));
-      _startScan();
-      setState(() {
-        connected = false;
-        connecting = false;
-      });
+  @override
+  void dispose() {
+    MyBleManager().isConnectedNotifier.removeListener(_onConnectionChanged);
+    if (scanning) {
+      scanStream.cancel();
     }
+    super.dispose();
   }
 
-  // --- 4. Building the UI (User Interface) ---
+  // --- UI Building ---
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Scaffold(
-            appBar: AppBar(
-              backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-              title: Text(widget.title),
-            ),
-            body: RefreshIndicator(
-              onRefresh: () async {
-                return _startScan();
-              },
-              child: ListView.builder(
-                  itemCount: foundBleDevicesFiltered.length,
-                  itemBuilder: (context, index) => Card(
-                        child: ListTile(
-                          dense: true,
-                          onTap: () {
-                            if (!connecting) {
-                              _startConnection(index);
-                            }
-                          },
-                          subtitle: Text(foundBleDevicesFiltered[index].id),
-                          title: Text(
-                              "$index: ${foundBleDevicesFiltered[index].name}"),
-                        ),
-                      )),
-            )),
+    return ValueListenableBuilder<bool>(
+      valueListenable: MyBleManager().isConnectingNotifier,
+      builder: (context, isConnecting, child) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: MyBleManager().isConnectedNotifier,
+          builder: (context, isConnected, child) {
+            return Stack(
+              children: [
+                Scaffold(
+                  appBar: AppBar(
+                    backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+                    title: Text(widget.title),
+                  ),
+                  body: RefreshIndicator(
+                    onRefresh: () async {
+                      _startScan();
+                    },
+                    child: foundBleDevicesFiltered.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const CircularProgressIndicator(),
+                                const SizedBox(height: 16),
+                                Text(
+                                  scanning
+                                      ? "Ricerca in corso per '$bleDeviceNameFilter'..."
+                                      : "Scansione terminata. Trascina per aggiornare.",
+                                  style: const TextStyle(color: Colors.black54),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: foundBleDevicesFiltered.length,
+                            itemBuilder: (context, index) {
+                              final device = foundBleDevicesFiltered[index];
+                              final isThisDeviceConnected = isConnected &&
+                                  MyBleManager().connectedDeviceId == device.id;
+                              
+                              return Card(
+                                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                child: ListTile(
+                                  dense: true,
+                                  onTap: () {
+                                    if (!isConnecting) {
+                                      if (isThisDeviceConnected) {
+                                        MyBleManager().disconnect();
+                                      } else {
+                                        _startConnection(index);
+                                      }
+                                    }
+                                  },
+                                  subtitle: Text(
+                                    device.id,
+                                    style: const TextStyle(fontFamily: 'monospace'),
+                                  ),
+                                  title: Text(
+                                    device.name,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  ),
+                                  trailing: isThisDeviceConnected
+                                      ? const Icon(Icons.check_circle, color: Colors.green, size: 24)
+                                      : const Icon(Icons.chevron_right, color: Colors.black38),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ),
 
-        // --- Loading Overlay ---
-        if (connecting)
-          const Opacity(
-            opacity: 0.5,
-            child: ModalBarrier(dismissible: false, color: Colors.black),
-          ),
-        if (connecting)
-          const Center(
-            child: CircularProgressIndicator(),
-          ),
-      ],
+                // --- Loading Overlay ---
+                if (isConnecting)
+                  const Opacity(
+                    opacity: 0.4,
+                    child: ModalBarrier(dismissible: false, color: Colors.black),
+                  ),
+                if (isConnecting)
+                  const Center(
+                    child: Card(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text(
+                              "Connessione in corso...",
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }
