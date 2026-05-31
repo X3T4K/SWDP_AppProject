@@ -5,6 +5,7 @@ import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:smart_wearables_app/connection/stream.dart';
 import 'package:smart_wearables_app/connection/messages.dart';
 import 'package:smart_wearables_app/services/data_parsing.dart';
+import 'package:smart_wearables_app/services/notification_service.dart';
 
 class MyBleManager {
   // Singleton pattern
@@ -291,7 +292,32 @@ class MyBleManager {
   /// Entry point for raw bytes from BLE
   void processRawData(List<int> data) {
     _rxBuffer.addAll(data);
+    _checkForInterruptAlarm();
     _extractPackets();
+  }
+
+  void _checkForInterruptAlarm() {
+    for (int i = 0; i <= _rxBuffer.length - 3; i++) {
+      if (_rxBuffer[i] == startByte &&
+          _rxBuffer[i + 1] == 9 &&
+          _rxBuffer[i + 2] == endByte) {
+        
+        developer.log("Rilevato interrupt 'Troppo Blu' (AS7341_TRESHOLD)!", name: 'BleManager');
+        
+        // Mostra la notifica locale
+        NotificationService().showNotification(
+          id: 1,
+          title: "Allarme Luce Blu",
+          body: "Soglia luce blu superata! (Troppo Blu)",
+        );
+
+        // Rimuove la sequenza dell'allarme dal buffer per non inficiare altri pacchetti
+        _rxBuffer.removeRange(i, i + 3);
+        
+        // Decrementa l'indice per la scansione continua
+        i--;
+      }
+    }
   }
 
   void _extractPackets() {
