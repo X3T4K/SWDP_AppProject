@@ -85,7 +85,7 @@ class StorageService {
     // 2. Aggiungi i nuovi campioni
     final now = DateTime.now();
     for (var s in newSamples) {
-      final dt = DateTime(now.year, now.month, now.day, s.hh, s.mm, s.ss);
+      final dt = DateTime(now.year, now.month, now.day, s.hh, s.mm, s.ss, s.sss);
       final timestamp = dt.millisecondsSinceEpoch.toString();
       final row = "$timestamp,${s.db},${s.peak}";
       dataMap[timestamp] = row;
@@ -140,7 +140,7 @@ class StorageService {
       if (parts.length < 3) continue;
       result.add({
         'timestamp': DateTime.fromMillisecondsSinceEpoch(int.parse(parts[0])),
-        'db': int.parse(parts[1]),
+        'db': double.parse(parts[1]),
         'peak': int.parse(parts[2]),
       });
     }

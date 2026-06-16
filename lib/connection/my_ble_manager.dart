@@ -344,7 +344,6 @@ class MyBleManager {
         return;
       }
 
-      int type = _rxBuffer[1];
       int payloadLength =
       (_rxBuffer[2] << 8) |
       (_rxBuffer[3]);

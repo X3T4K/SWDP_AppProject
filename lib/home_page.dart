@@ -814,7 +814,7 @@ class SuonoPage extends StatelessWidget {
 
   Widget _buildLatestValueSection() {
     final latest = data.last;
-    final db = latest['db'] as int;
+    final db = (latest['db'] as num).round();
     final hasPeak = latest['peak'] == 1;
 
     String rating = "Tranquillo";
@@ -980,7 +980,7 @@ class StressMelatoninaPage extends StatelessWidget {
 
     // 2. Calcolo Stress Ambientale (0-100%)
     // Più rumore (dB) e luce artificiale sono alti, più c'è stress
-    int dbVal = latestMic != null ? latestMic!['db'] as int : 30;
+    int dbVal = latestMic != null ? (latestMic!['db'] as num).round() : 30;
     double stressPercent = (dbVal * 0.75 + artifVal * 0.05);
     stressPercent = stressPercent.clamp(0, 100);
 

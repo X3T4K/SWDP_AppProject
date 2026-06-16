@@ -40,21 +40,48 @@ class MicrophoneSample {
     return MicrophoneSample(Uint8List.fromList(bytes));
   }
 
-  // Getters to unpack raw bytes (Little Endian)
-  int get hh => ByteData.view(rawData.buffer).getUint16(0, Endian.little);
-  int get mm => ByteData.view(rawData.buffer).getUint16(2, Endian.little);
-  int get ss => ByteData.view(rawData.buffer).getUint16(4, Endian.little);
-  int get db => ByteData.view(rawData.buffer).getUint16(6, Endian.little);
-  int get peak => rawData[8];
+  // Getters to unpack raw bytes (according to report.md)
+  int get hh => rawData[0];
+  int get mm => rawData[1];
+  int get ss => rawData[2];
+  int get sss => ByteData.view(rawData.buffer, rawData.offsetInBytes, rawData.length).getUint16(3, Endian.big);
+  double get db => ByteData.view(rawData.buffer, rawData.offsetInBytes, rawData.length).getFloat32(5, Endian.little);
+  int get peak => db > 75.0 ? 1 : 0;
 }
 
 class DataParser {
+  static bool _isZeroSample(List<int> bytes) {
+    for (int b in bytes) {
+      if (b != 0) return false;
+    }
+    return true;
+  }
+
   static Future<void> processFullDump(DumpType type, List<int> accumulatedData) async {
     if (type == DumpType.spectrometer) {
       List<SpectrometerSample> samples = [];
-      for (int i = 0; i <= accumulatedData.length - 14; i += 14) {
-        samples.add(SpectrometerSample.fromBytes(accumulatedData.sublist(i, i + 14)));
+      const int bytesPerSample = 14;
+      const int samplesPerPage = 292;
+      const int pageSize = 4096;
+
+      for (int pageStart = 0; pageStart < accumulatedData.length; pageStart += pageSize) {
+        int currentPageSize = accumulatedData.length - pageStart;
+        int numSamples = (currentPageSize < pageSize)
+            ? (currentPageSize ~/ bytesPerSample)
+            : samplesPerPage;
+        if (numSamples > samplesPerPage) numSamples = samplesPerPage;
+
+        for (int s = 0; s < numSamples; s++) {
+          int offset = pageStart + s * bytesPerSample;
+          if (offset + bytesPerSample <= accumulatedData.length) {
+            var sampleBytes = accumulatedData.sublist(offset, offset + bytesPerSample);
+            if (!_isZeroSample(sampleBytes)) {
+              samples.add(SpectrometerSample.fromBytes(sampleBytes));
+            }
+          }
+        }
       }
+
       developer.log("Parsed ${samples.length} Spectrometer samples", name: 'DataParser');
       for (var i = 0; i < samples.length; i++) {
         var s = samples[i];
@@ -66,9 +93,28 @@ class DataParser {
       
     } else if (type == DumpType.microphone) {
       List<MicrophoneSample> samples = [];
-      for (int i = 0; i <= accumulatedData.length - 9; i += 9) {
-        samples.add(MicrophoneSample.fromBytes(accumulatedData.sublist(i, i + 9)));
+      const int bytesPerSample = 9;
+      const int samplesPerPage = 455;
+      const int pageSize = 4096;
+
+      for (int pageStart = 0; pageStart < accumulatedData.length; pageStart += pageSize) {
+        int currentPageSize = accumulatedData.length - pageStart;
+        int numSamples = (currentPageSize < pageSize)
+            ? (currentPageSize ~/ bytesPerSample)
+            : samplesPerPage;
+        if (numSamples > samplesPerPage) numSamples = samplesPerPage;
+
+        for (int s = 0; s < numSamples; s++) {
+          int offset = pageStart + s * bytesPerSample;
+          if (offset + bytesPerSample <= accumulatedData.length) {
+            var sampleBytes = accumulatedData.sublist(offset, offset + bytesPerSample);
+            if (!_isZeroSample(sampleBytes)) {
+              samples.add(MicrophoneSample.fromBytes(sampleBytes));
+            }
+          }
+        }
       }
+
       developer.log("Parsed ${samples.length} Microphone samples", name: 'DataParser');
       // Salva sul file CSV del microfono
       await StorageService().saveMicrophoneSamples(samples);
