@@ -27,26 +27,26 @@ class SpectrometerSample {
   int get clear => ByteData.view(rawData.buffer).getUint16(12, Endian.little);
 }
 
-/// Campione del microfono (9 byte)
+/// Campione del microfono (12 byte)
 class MicrophoneSample {
   final Uint8List rawData;
 
   MicrophoneSample(this.rawData);
 
   factory MicrophoneSample.fromBytes(List<int> bytes) {
-    if (bytes.length != 9) {
-      throw ArgumentError("MicrophoneSample requires exactly 9 bytes");
+    if (bytes.length != 12) {
+      throw ArgumentError("MicrophoneSample requires exactly 12 bytes");
     }
     return MicrophoneSample(Uint8List.fromList(bytes));
   }
 
-  // Getters to unpack raw bytes (according to report.md)
+  // Getters to unpack raw bytes (according to main.c memory alignment)
   int get hh => rawData[0];
   int get mm => rawData[1];
   int get ss => rawData[2];
-  int get sss => ByteData.view(rawData.buffer, rawData.offsetInBytes, rawData.length).getUint16(3, Endian.big);
-  double get db => ByteData.view(rawData.buffer, rawData.offsetInBytes, rawData.length).getFloat32(5, Endian.little);
-  int get peak => db > 75.0 ? 1 : 0;
+  int get sss => ByteData.view(rawData.buffer, rawData.offsetInBytes, rawData.length).getUint16(4, Endian.little);
+  int get db => ByteData.view(rawData.buffer, rawData.offsetInBytes, rawData.length).getFloat32(8, Endian.little).round();
+  int get peak => 0; // Ignored for now as per request
 }
 
 class DataParser {
@@ -93,8 +93,8 @@ class DataParser {
       
     } else if (type == DumpType.microphone) {
       List<MicrophoneSample> samples = [];
-      const int bytesPerSample = 9;
-      const int samplesPerPage = 455;
+      const int bytesPerSample = 12;
+      const int samplesPerPage = 341;
       const int pageSize = 4096;
 
       for (int pageStart = 0; pageStart < accumulatedData.length; pageStart += pageSize) {

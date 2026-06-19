@@ -5,6 +5,7 @@ import 'package:smart_wearables_app/connection/my_ble_manager.dart';
 import 'package:smart_wearables_app/connection/connection_page.dart';
 import 'package:smart_wearables_app/services/storage_service.dart';
 import 'package:smart_wearables_app/services/data_parsing.dart';
+import 'package:smart_wearables_app/services/wellbeing_service.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 
 class HomePage extends StatefulWidget {
@@ -27,6 +28,7 @@ class _HomePageState extends State<HomePage> {
 
   bool _isDownloadingDump = false;
   String _selectedPeriod = 'All'; // '1h', '6h', '24h', 'All'
+  bool _isDemoMode = false;
 
   @override
   void initState() {
@@ -68,10 +70,22 @@ class _HomePageState extends State<HomePage> {
 
   // Carica i dati salvati nei file CSV
   Future<void> _loadLocalData() async {
-    final spec = await StorageService().getSpectrometerData();
-    final mic = await StorageService().getMicrophoneData();
-    final specTime = await StorageService().getLastUpdateTime('spectrometer_data.csv');
-    final micTime = await StorageService().getLastUpdateTime('microphone_data.csv');
+    final List<Map<String, dynamic>> spec;
+    final List<Map<String, dynamic>> mic;
+    final DateTime? specTime;
+    final DateTime? micTime;
+
+    if (_isDemoMode) {
+      spec = await StorageService().getSpectrometerDemoData();
+      mic = await StorageService().getMicrophoneDemoData();
+      specTime = spec.isNotEmpty ? spec.last['timestamp'] as DateTime : DateTime.now();
+      micTime = mic.isNotEmpty ? mic.last['timestamp'] as DateTime : DateTime.now();
+    } else {
+      spec = await StorageService().getSpectrometerData();
+      mic = await StorageService().getMicrophoneData();
+      specTime = await StorageService().getLastUpdateTime('spectrometer_data.csv');
+      micTime = await StorageService().getLastUpdateTime('microphone_data.csv');
+    }
 
     setState(() {
       _spectrometerData = spec;
@@ -83,6 +97,17 @@ class _HomePageState extends State<HomePage> {
 
   // Avvia il download dei dati via BLE
   void _triggerDownload(DumpType type) {
+    if (_isDemoMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text("Disabilita la Modalità Demo per avviare il download dei dati reali."),
+          backgroundColor: Colors.orange.shade800,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
     if (!MyBleManager().isConnected) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -142,8 +167,9 @@ class _HomePageState extends State<HomePage> {
         onDownload: () => _triggerDownload(DumpType.microphone),
       ),
       StressMelatoninaPage(
-        latestSpec: _spectrometerData.isNotEmpty ? _spectrometerData.last : null,
-        latestMic: _microphoneData.isNotEmpty ? _microphoneData.last : null,
+        spectrometerData: _spectrometerData,
+        microphoneData: _microphoneData,
+        isDemoMode: _isDemoMode,
       ),
     ];
 
@@ -178,6 +204,31 @@ class _HomePageState extends State<HomePage> {
             ),
             actions: [
               IconButton(
+                icon: Icon(
+                  _isDemoMode ? Icons.science : Icons.science_outlined,
+                  color: _isDemoMode ? const Color(0xFF06F3FF) : Colors.white,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _isDemoMode = !_isDemoMode;
+                  });
+                  _loadLocalData();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        _isDemoMode
+                            ? "Modalità Demo Attivata! Visualizzazione dati simulati."
+                            : "Modalità Demo Disattivata! Visualizzazione dati reali.",
+                      ),
+                      duration: const Duration(seconds: 2),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  );
+                },
+                tooltip: 'Toggle Modalità Demo',
+              ),
+              IconButton(
                 icon: const Icon(Icons.refresh, color: Colors.white),
                 onPressed: _loadLocalData,
                 tooltip: 'Ricarica dati locali',
@@ -208,6 +259,29 @@ class _HomePageState extends State<HomePage> {
           ),
           body: Column(
             children: [
+              // Banner Modalità Demo
+              if (_isDemoMode)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                  color: Colors.deepPurple.shade700,
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.science, color: Colors.white, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        "MODALITÀ DEMO ATTIVA - Dati simulati cantiere",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               // 1. Banner di Stato Connessione (Se non connesso)
               if (!isConnected)
                 Container(
@@ -937,18 +1011,20 @@ class SuonoPage extends StatelessWidget {
 // PAGINA SALUTE & SONNO (STRESS & MELATONINA)
 // ==========================================
 class StressMelatoninaPage extends StatelessWidget {
-  final Map<String, dynamic>? latestSpec;
-  final Map<String, dynamic>? latestMic;
+  final List<Map<String, dynamic>> spectrometerData;
+  final List<Map<String, dynamic>> microphoneData;
+  final bool isDemoMode;
 
   const StressMelatoninaPage({
     super.key,
-    required this.latestSpec,
-    required this.latestMic,
+    required this.spectrometerData,
+    required this.microphoneData,
+    required this.isDemoMode,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (latestSpec == null && latestMic == null) {
+    if (spectrometerData.isEmpty && microphoneData.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -971,18 +1047,73 @@ class StressMelatoninaPage extends StatelessWidget {
       );
     }
 
-    // 1. Calcolo Melatonina (0-100%)
-    // Più c'è luce blu o artificiale, meno si produce melatonina (soppressione)
-    int blueVal = latestSpec != null ? latestSpec!['blue'] as int : 0;
-    int artifVal = latestSpec != null ? latestSpec!['luceArtificiale'] as int : 0;
-    double melatoninPercent = 100 - (blueVal * 0.08 + artifVal * 0.03);
-    melatoninPercent = melatoninPercent.clamp(0, 100);
+    final result = WellbeingService().calculate(
+      spectrometerData: spectrometerData,
+      microphoneData: microphoneData,
+      isDemoMode: isDemoMode,
+    );
 
-    // 2. Calcolo Stress Ambientale (0-100%)
-    // Più rumore (dB) e luce artificiale sono alti, più c'è stress
-    int dbVal = latestMic != null ? (latestMic!['db'] as num).round() : 30;
-    double stressPercent = (dbVal * 0.75 + artifVal * 0.05);
-    stressPercent = stressPercent.clamp(0, 100);
+    // Determina il colore e il giudizio dello stress (ISG)
+    Color stressColor = Colors.green.shade600;
+    String stressRating = "Basso (Omeostasi)";
+    if (result.isg >= 60.0) {
+      stressColor = Colors.red.shade700;
+      stressRating = "Alto (Carico Severo)";
+    } else if (result.isg >= 25.0) {
+      stressColor = Colors.orange.shade700;
+      stressRating = "Moderato (Adattamento)";
+    }
+
+    // Determina il colore e il giudizio della melatonina
+    Color melatoninColor = Colors.indigo.shade700;
+    String melatoninRating = result.melatonin > 70.0
+        ? "Ottima (Favorisce il Sonno)"
+        : "Inibita (Luce Blu Serale)";
+
+    // Trova lo stressore principale per personalizzare i consigli
+    final penalties = {
+      'TWA': result.pTwa,
+      'Impulse': result.pImpulse,
+      'BLH': result.pBlh,
+      'Flicker': result.pFlicker,
+      'Circadian': result.pCircadian,
+    };
+    String highestStressor = 'TWA';
+    double maxPenalty = -1.0;
+    penalties.forEach((key, val) {
+      if (val > maxPenalty) {
+        maxPenalty = val;
+        highestStressor = key;
+      }
+    });
+
+    // Costruisci il consiglio salute personalizzato
+    String adviceTitle = "Omeostasi Fisiologica";
+    String adviceDesc = "Il carico allostatico ambientale è basso. Il tuo sistema nervoso non ha subito usura esterna nelle ultime ore.";
+    IconData adviceIcon = Icons.check_circle_outline;
+    Color adviceBgColor = const Color(0xFFE8F5E9); // Verde chiaro
+    Color adviceIconColor = const Color(0xFF2E7D32);
+
+    if (result.isg >= 60.0) {
+      adviceTitle = "Carico Allostatico Severo!";
+      adviceDesc = "Il tuo sistema fisiologico è andato incontro a un logoramento importante. Si raccomanda caldamente l'isolamento acustico e l'immersione in ambienti a bassa intensità luminosa e temperatura di colore calda.";
+      adviceIcon = Icons.warning_amber_rounded;
+      adviceBgColor = const Color(0xFFFFEBEE); // Rosso chiaro
+      adviceIconColor = const Color(0xFFC62828);
+    } else if (result.isg >= 25.0) {
+      adviceTitle = "Fase di Adattamento Moderato";
+      adviceIcon = Icons.info_outline;
+      adviceBgColor = const Color(0xFFFFF3E0); // Arancione chiaro
+      adviceIconColor = const Color(0xFFEF6C00);
+
+      if (highestStressor == 'Circadian') {
+        adviceDesc = "Stress ambientale moderato. L'esposizione alla luce non è stata ottimale oggi. Riduci la luminosità degli schermi nelle prossime ore per facilitare il rilascio di melatonina.";
+      } else if (highestStressor == 'TWA' || highestStressor == 'Impulse') {
+        adviceDesc = "Stress ambientale moderato, guidato principalmente dal rumore. Cerca di passare del tempo in contesti più silenziosi per far riposare il sistema uditivo.";
+      } else {
+        adviceDesc = "Stress ambientale moderato dovuto ad affaticamento visivo (luce blu o sfarfallio). Evita schermi digitali sbilanciati e prediligi l'illuminazione naturale.";
+      }
+    }
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -990,16 +1121,31 @@ class StressMelatoninaPage extends StatelessWidget {
       child: Column(
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                "Riepilogo Benessere",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+              ),
+              IconButton(
+                icon: const Icon(Icons.info_outline, color: Color(0xFF005BFF)),
+                onPressed: () => _showInfoModal(context),
+                tooltip: "Metodologia di Calcolo",
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
             children: [
               // Card Melatonina
               Expanded(
                 child: _buildHealthGaugeCard(
                   title: "Melatonina",
-                  value: "${melatoninPercent.toInt()}%",
-                  subtitle: melatoninPercent > 70 ? "Ottima (Favorisce il Sonno)" : "Inibita (Luce Blu Elevata)",
-                  color: Colors.indigo.shade700,
+                  value: "${result.melatonin.toInt()}%",
+                  subtitle: melatoninRating,
+                  color: melatoninColor,
                   icon: Icons.nightlight_round,
-                  progressValue: melatoninPercent / 100,
+                  progressValue: result.melatonin / 100.0,
                 ),
               ),
               const SizedBox(width: 12),
@@ -1007,48 +1153,205 @@ class StressMelatoninaPage extends StatelessWidget {
               Expanded(
                 child: _buildHealthGaugeCard(
                   title: "Stress Ambientale",
-                  value: "${stressPercent.toInt()}%",
-                  subtitle: stressPercent < 45 ? "Basso (Ottimale)" : "Alto (Rischio Affaticamento)",
-                  color: stressPercent < 45 ? Colors.green.shade600 : Colors.red.shade700,
+                  value: "${result.isg.toInt()}%",
+                  subtitle: stressRating,
+                  color: stressColor,
                   icon: Icons.psychology,
-                  progressValue: stressPercent / 100,
+                  progressValue: result.isg / 100.0,
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 16),
+
+          // Card Dettaglio Stressori Ambientali (Allostatic Load Breakdown)
+          Card(
+            elevation: 0,
+            color: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.analytics_outlined, color: Colors.blueAccent, size: 22),
+                      SizedBox(width: 8),
+                      Text(
+                        "Dettaglio Carico Ambientale",
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildStressorRow(
+                    label: "Rumore Continuo (TWA)",
+                    penalty: result.pTwa,
+                    detail: "${result.twaValue.toStringAsFixed(1)} dBA",
+                    icon: Icons.volume_up,
+                    color: Colors.teal.shade600,
+                  ),
+                  _buildStressorRow(
+                    label: "Picchi Acustici (Impulsi)",
+                    penalty: result.pImpulse,
+                    detail: "${result.impulseCount} ${result.impulseCount == 1 ? 'evento' : 'eventi'}",
+                    icon: Icons.flash_on,
+                    color: Colors.orange.shade700,
+                  ),
+                  _buildStressorRow(
+                    label: "Blue Light Hazard (Retina)",
+                    penalty: result.pBlh,
+                    detail: "${(result.pBlh * 100).toInt()}%",
+                    icon: Icons.blur_on,
+                    color: Colors.blue.shade700,
+                  ),
+                  _buildStressorRow(
+                    label: "Sfarfallio Ottico (Flicker)",
+                    penalty: result.pFlicker,
+                    detail: "FI: ${result.avgFlickerIndex.toStringAsFixed(3)}",
+                    icon: Icons.lightbulb_outline,
+                    color: Colors.amber.shade800,
+                  ),
+                  _buildStressorRow(
+                    label: "Disallineamento Circadiano",
+                    penalty: result.pCircadian,
+                    detail: "${(result.pCircadian * 100).toInt()}%",
+                    icon: Icons.access_time,
+                    color: Colors.purple.shade600,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Card Dashboard Cronobiologica (Day / Night CS Detail)
+          Card(
+            elevation: 0,
+            color: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.wb_twilight, color: Colors.deepPurple, size: 22),
+                      SizedBox(width: 8),
+                      Text(
+                        "Allineamento Cronobiologico",
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.wb_sunny_rounded, color: Colors.amber.shade800, size: 18),
+                                  const SizedBox(width: 6),
+                                  const Text("Fase Diurna", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87)),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                "CS: ${result.avgDayCs.toStringAsFixed(2)}",
+                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                result.avgDayCs >= 0.3
+                                    ? "Ottimale (>= 0.3)"
+                                    : "Bassa stimolaz.",
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: result.avgDayCs >= 0.3 ? Colors.green.shade800 : Colors.orange.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.indigo.shade50.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.nightlight_round_rounded, color: Colors.indigo, size: 18),
+                                  const SizedBox(width: 6),
+                                  const Text("Fase Serale", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87)),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                "CS: ${result.avgNightCs.toStringAsFixed(2)}",
+                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                result.avgNightCs < 0.1
+                                    ? "Ottimale (< 0.1)"
+                                    : "Disturbo sonno",
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: result.avgNightCs < 0.1 ? Colors.green.shade800 : Colors.red.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 20),
 
           // Consigli Personalizzati per la Salute
           const Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              "Consigli Salute Personalizzati",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4.0),
+              child: Text(
+                "Consigli Salute Personalizzati",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+              ),
             ),
           ),
           const SizedBox(height: 12),
 
-          // Consiglio 1: Sonno e Melatonina
+          // Card del Consiglio dinamico
           _buildInsightCard(
-            title: "Ottimizzazione del Sonno",
-            desc: melatoninPercent > 70
-                ? "L'esposizione alla luce blu è ottimale. Se stai pianificando di andare a dormire, il tuo corpo è nella condizione biologica corretta per rilassarsi naturalmente."
-                : "Rilevata un'alta presenza di luce blu o artificiale. Questo può inibire la secrezione naturale di melatonina. Spegni gli schermi o allontanati da fonti di luce forte almeno un'ora prima del sonno.",
-            icon: Icons.bedtime,
-            color: melatoninPercent > 70 ? Colors.indigo.shade50 : Colors.amber.shade50,
-            iconColor: melatoninPercent > 70 ? Colors.indigo : Colors.amber.shade800,
-          ),
-          const SizedBox(height: 12),
-
-          // Consiglio 2: Livello di Rumore
-          _buildInsightCard(
-            title: "Benessere Ambientale",
-            desc: stressPercent < 45
-                ? "L'ambiente circostante ha un livello di stimoli sonori e luminosi perfetto per il riposo mentale e l'attività ad alta concentrazione."
-                : "Il tuo attuale ambiente presenta elevati stimoli sonori o di illuminazione che possono innalzare i livelli di cortisolo. Fai una pausa di 10 minuti in una stanza più silenziosa per decongestionare la mente.",
-            icon: Icons.spa,
-            color: stressPercent < 45 ? Colors.green.shade50 : Colors.red.shade50,
-            iconColor: stressPercent < 45 ? Colors.green.shade800 : Colors.red.shade800,
+            title: adviceTitle,
+            desc: adviceDesc,
+            icon: adviceIcon,
+            color: adviceBgColor,
+            iconColor: adviceIconColor,
           ),
         ],
       ),
@@ -1116,6 +1419,48 @@ class StressMelatoninaPage extends StatelessWidget {
     );
   }
 
+  Widget _buildStressorRow({
+    required String label,
+    required double penalty,
+    required String detail,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.black87),
+              ),
+              const Spacer(),
+              Text(
+                detail,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: penalty,
+              minHeight: 6,
+              backgroundColor: const Color(0xFFF3F6FA),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInsightCard({
     required String title,
     required String desc,
@@ -1159,6 +1504,177 @@ class StressMelatoninaPage extends StatelessWidget {
             )
           ],
         ),
+      ),
+    );
+  }
+
+  void _showInfoModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFFF3F6FA),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 4,
+                          offset: Offset(0, 1),
+                        )
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          "Metodologia di Calcolo",
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        )
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.all(20),
+                      children: [
+                        _buildSectionHeader("1. Indice di Stress Giornaliero (ISG)"),
+                        const Text(
+                          "L'Indice di Stress Giornaliero (ISG) quantifica il carico allostatico indotto dall'ambiente. Combina 5 fattori di rischio fisici pesati secondo la letteratura clinica:",
+                          style: TextStyle(fontSize: 14, color: Colors.black87, height: 1.4),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildFormulaCard(),
+                        const SizedBox(height: 16),
+                        _buildInfoRow(Icons.volume_up, "Rumore Continuo (TWA - 30%)", "Calcolato tramite media ponderata nel tempo (OSHA). Penalità progressiva da 50 dBA (0%) fino a 85 dBA (100%)."),
+                        _buildInfoRow(Icons.flash_on, "Picchi Acustici (Impulsi - 20%)", "Conteggio di eventi istantanei nocivi (soglia demo: 120 dB, reale: 140 dBSPL). Due eventi saturano la penalità."),
+                        _buildInfoRow(Icons.blur_on, "Blue Light Hazard (Retina - 15%)", "Valuta l'energia della luce blu accumulata sulla retina (ICNIRP), calcolando il tempo massimo di visione sicura prima di stress ossidativo."),
+                        _buildInfoRow(Icons.lightbulb_outline, "Sfarfallio Ottico (Flicker - 10%)", "Stima il sovraccarico corticale neurologico impercettibile (flicker LED), rilevando sorgenti a forte modulazione."),
+                        _buildInfoRow(Icons.access_time, "Disallineamento Circadiano (25%)", "Misura l'alterazione biologica giorno/notte integrando i target del Circadian Stimulus (CS)."),
+                        
+                        const SizedBox(height: 24),
+                        _buildSectionHeader("2. Indice di Melatonina"),
+                        const Text(
+                          "Rappresenta la disponibilità naturale dell'ormone del sonno. La luce blu e artificiale nelle ore serali (18:00 - 08:00) sopprime la secrezione di melatonina. L'indice decresce proporzionalmente alla stimolazione circadiana serale (CS night).",
+                          style: TextStyle(fontSize: 14, color: Colors.black87, height: 1.4),
+                        ),
+
+                        const SizedBox(height: 24),
+                        _buildSectionHeader("3. Target Scientifici di Riferimento"),
+                        _buildTargetRow("Luce Diurna (08:00-18:00)", "Target CS >= 0.3", "Necessario per l'attivazione cognitiva ed evitare sonnolenza."),
+                        _buildTargetRow("Luce Serale (18:00-23:00)", "Target CS < 0.1", "Essenziale per consentire il picco naturale di melatonina."),
+                        _buildTargetRow("Ambiente Acustico", "Target TWA <= 50 dBA", "Soglia di benessere fisiologico per l'apparato cardiocircolatorio."),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(
+        title,
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF005BFF)),
+      ),
+    );
+  }
+
+  Widget _buildFormulaCard() {
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          children: [
+            const Text(
+              "Equazione ISG Unificata",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black54),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "ISG = 30%·P_TWA + 20%·P_Impulse + 15%·P_BLH + 10%·P_Flicker + 25%·P_Circadian",
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF3F51B5), fontFamily: 'monospace'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String title, String desc) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Colors.blueAccent, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87)),
+                const SizedBox(height: 4),
+                Text(desc, style: const TextStyle(fontSize: 12, color: Colors.black54, height: 1.3)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTargetRow(String timeRange, String target, String reason) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: const TextStyle(fontSize: 13, color: Colors.black87),
+                children: [
+                  TextSpan(text: "$timeRange: ", style: const TextStyle(fontWeight: FontWeight.bold)),
+                  TextSpan(text: "$target\n", style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold)),
+                  TextSpan(text: reason, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

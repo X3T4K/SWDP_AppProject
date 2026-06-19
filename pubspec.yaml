@@ -26,6 +26,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/spectrometer_data.csv
+    - assets/microphone_data.csv
 
 flutter_launcher_icons:
   android: true

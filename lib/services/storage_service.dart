@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:developer' as developer;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 import 'package:smart_wearables_app/services/data_parsing.dart';
 
@@ -140,11 +142,65 @@ class StorageService {
       if (parts.length < 3) continue;
       result.add({
         'timestamp': DateTime.fromMillisecondsSinceEpoch(int.parse(parts[0])),
-        'db': double.parse(parts[1]),
+        'db': double.parse(parts[1]).round(),
         'peak': int.parse(parts[2]),
       });
     }
     return result;
+  }
+
+  // Recupera i dati demo dello spettrometro dagli asset
+  Future<List<Map<String, dynamic>>> getSpectrometerDemoData() async {
+    try {
+      final csvContent = await rootBundle.loadString('assets/spectrometer_data.csv');
+      final lines = csvContent.split('\n');
+      List<Map<String, dynamic>> result = [];
+      if (lines.length <= 1) return [];
+
+      for (int i = 1; i < lines.length; i++) {
+        final line = lines[i].trim();
+        if (line.isEmpty) continue;
+        List<String> parts = line.split(',');
+        if (parts.length < 5) continue;
+        result.add({
+          'timestamp': DateTime.fromMillisecondsSinceEpoch(int.parse(parts[0])),
+          'luceArtificiale': int.parse(parts[1]),
+          'blue': int.parse(parts[2]),
+          'deepBlue': int.parse(parts[3]),
+          'clear': int.parse(parts[4]),
+        });
+      }
+      return result;
+    } catch (e) {
+      developer.log("Error loading spectrometer demo data: $e", name: 'StorageService');
+      return [];
+    }
+  }
+
+  // Recupera i dati demo del microfono dagli asset
+  Future<List<Map<String, dynamic>>> getMicrophoneDemoData() async {
+    try {
+      final csvContent = await rootBundle.loadString('assets/microphone_data.csv');
+      final lines = csvContent.split('\n');
+      List<Map<String, dynamic>> result = [];
+      if (lines.length <= 1) return [];
+
+      for (int i = 1; i < lines.length; i++) {
+        final line = lines[i].trim();
+        if (line.isEmpty) continue;
+        List<String> parts = line.split(',');
+        if (parts.length < 3) continue;
+        result.add({
+          'timestamp': DateTime.fromMillisecondsSinceEpoch(int.parse(parts[0])),
+          'db': double.parse(parts[1]).round(),
+          'peak': int.parse(parts[2]),
+        });
+      }
+      return result;
+    } catch (e) {
+      developer.log("Error loading microphone demo data: $e", name: 'StorageService');
+      return [];
+    }
   }
 
   // Cancella tutti i dati salvati
