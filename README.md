@@ -10,17 +10,17 @@ The project integrates optical and acoustic sensing hardware with a Flutter mobi
 
 ```mermaid
 graph TD
-    subgraph Hardware & Firmware (STM32U575)
+    subgraph "Hardware & Firmware (STM32U575)"
         A[AS7341 11-Channel Spectrometer] -->|I2C3| B(STM32U575 Microcontroller)
         M[Analog/Digital Microphone] -->|ADC/DFSDM| B
         B -->|UART / EXTI| C[RN4871 BLE Module]
     end
 
-    subgraph Wireless Channel
+    subgraph "Wireless Channel"
         C -->|BLE Notifications & Data| D((Smartphone))
     end
 
-    subgraph Flutter Application
+    subgraph "Flutter Application"
         D -->|BLE Stream| E[MyBleManager]
         E -->|Data Parsing| F[DataParser]
         F -->|CSV Logging| G[StorageService]
