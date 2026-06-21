@@ -25,28 +25,62 @@ class SpectrometerSample {
   int get blue => ByteData.view(rawData.buffer).getUint16(8, Endian.little);
   int get deepBlue => ByteData.view(rawData.buffer).getUint16(10, Endian.little);
   int get clear => ByteData.view(rawData.buffer).getUint16(12, Endian.little);
+
+  bool get isValid => hh <= 23 && mm <= 59 && ss <= 59;
 }
 
-/// Campione del microfono (12 byte)
+/// Campione del microfono (9 byte)
 class MicrophoneSample {
   final Uint8List rawData;
 
   MicrophoneSample(this.rawData);
 
   factory MicrophoneSample.fromBytes(List<int> bytes) {
-    if (bytes.length != 12) {
-      throw ArgumentError("MicrophoneSample requires exactly 12 bytes");
+    if (bytes.length != 9) {
+      throw ArgumentError("MicrophoneSample requires exactly 9 bytes");
     }
     return MicrophoneSample(Uint8List.fromList(bytes));
   }
 
-  // Getters to unpack raw bytes (according to main.c memory alignment)
+  // Getters to unpack raw bytes (according to main.c memory alignment and packed struct)
   int get hh => rawData[0];
   int get mm => rawData[1];
   int get ss => rawData[2];
-  int get sss => ByteData.view(rawData.buffer, rawData.offsetInBytes, rawData.length).getUint16(4, Endian.little);
-  int get db => ByteData.view(rawData.buffer, rawData.offsetInBytes, rawData.length).getFloat32(8, Endian.little).round();
+  
+  int get sss {
+    try {
+      return ByteData.view(rawData.buffer, rawData.offsetInBytes, rawData.length).getUint16(3, Endian.big);
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  int get db {
+    try {
+      final double val = ByteData.view(rawData.buffer, rawData.offsetInBytes, rawData.length).getFloat32(5, Endian.little);
+      if (val.isNaN || val.isInfinite) {
+        return 0;
+      }
+      return val.round().clamp(0, 150);
+    } catch (e) {
+      return 0;
+    }
+  }
+
   int get peak => 0; // Ignored for now as per request
+
+  bool get isValid {
+    if (hh > 23 || mm > 59 || ss > 59) return false;
+    try {
+      final double val = ByteData.view(rawData.buffer, rawData.offsetInBytes, rawData.length).getFloat32(5, Endian.little);
+      if (val.isNaN || val.isInfinite || val < 0.0 || val > 150.0) {
+        return false;
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
 }
 
 class DataParser {
@@ -76,7 +110,10 @@ class DataParser {
           if (offset + bytesPerSample <= accumulatedData.length) {
             var sampleBytes = accumulatedData.sublist(offset, offset + bytesPerSample);
             if (!_isZeroSample(sampleBytes)) {
-              samples.add(SpectrometerSample.fromBytes(sampleBytes));
+              final sample = SpectrometerSample.fromBytes(sampleBytes);
+              if (sample.isValid) {
+                samples.add(sample);
+              }
             }
           }
         }
@@ -93,8 +130,8 @@ class DataParser {
       
     } else if (type == DumpType.microphone) {
       List<MicrophoneSample> samples = [];
-      const int bytesPerSample = 12;
-      const int samplesPerPage = 341;
+      const int bytesPerSample = 9;
+      const int samplesPerPage = 455;
       const int pageSize = 4096;
 
       for (int pageStart = 0; pageStart < accumulatedData.length; pageStart += pageSize) {
@@ -109,7 +146,10 @@ class DataParser {
           if (offset + bytesPerSample <= accumulatedData.length) {
             var sampleBytes = accumulatedData.sublist(offset, offset + bytesPerSample);
             if (!_isZeroSample(sampleBytes)) {
-              samples.add(MicrophoneSample.fromBytes(sampleBytes));
+              final sample = MicrophoneSample.fromBytes(sampleBytes);
+              if (sample.isValid) {
+                samples.add(sample);
+              }
             }
           }
         }

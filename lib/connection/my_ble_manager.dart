@@ -94,15 +94,6 @@ class MyBleManager {
     _updateNotifiers();
     developer.log("Avvio connessione al dispositivo: $deviceId", name: 'BLE_DEBUG');
 
-    try {
-      // Negoziazione MTU consigliata per elevate prestazioni e stabilità del dump
-      developer.log("Negoziazione MTU a 512 byte...", name: 'BLE_DEBUG');
-      final mtu = await _ble.requestMtu(deviceId: deviceId, mtu: 512);
-      developer.log("MTU Negoziata con successo: $mtu", name: 'BLE_DEBUG');
-    } catch (e) {
-      developer.log("Avviso: Errore negoziazione MTU (proseguo comunque): $e", name: 'BLE_DEBUG');
-    }
-
     _connectionSubscription?.cancel();
     _connectionSubscription = _ble.connectToDevice(
       id: deviceId,
@@ -156,8 +147,16 @@ class MyBleManager {
         _updateNotifiers();
         
         // Ritardo di sicurezza di 2 secondi consigliato per evitare errori "Cannot write client characteristic config descriptor (code 3)"
-        Future.delayed(const Duration(seconds: 2), () {
+        Future.delayed(const Duration(seconds: 2), () async {
           if (_isConnected && _connectedDeviceId == id) {
+            try {
+              // Negoziazione MTU consigliata per elevate prestazioni e stabilità del dump
+              developer.log("Negoziazione MTU a 512 byte...", name: 'BLE_DEBUG');
+              final mtu = await _ble.requestMtu(deviceId: id, mtu: 512);
+              developer.log("MTU Negoziata con successo: $mtu", name: 'BLE_DEBUG');
+            } catch (e) {
+              developer.log("Avviso: Errore negoziazione MTU (proseguo comunque): $e", name: 'BLE_DEBUG');
+            }
             _setupDataStreams(id);
           } else {
             developer.log("Rilevata disconnessione o cambio dispositivo durante l'attesa del setup dei canali dati.", name: 'BLE_DEBUG');

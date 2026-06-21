@@ -140,9 +140,15 @@ class StorageService {
       if (lines[i].trim().isEmpty) continue;
       List<String> parts = lines[i].split(',');
       if (parts.length < 3) continue;
+
+      final double? dbVal = double.tryParse(parts[1]);
+      if (dbVal == null || dbVal.isNaN || dbVal.isInfinite || dbVal < 0.0 || dbVal > 150.0) {
+        continue; // Drop corrupted, infinite, or out of range values
+      }
+
       result.add({
         'timestamp': DateTime.fromMillisecondsSinceEpoch(int.parse(parts[0])),
-        'db': double.parse(parts[1]).round(),
+        'db': dbVal.round(),
         'peak': int.parse(parts[2]),
       });
     }
@@ -190,9 +196,15 @@ class StorageService {
         if (line.isEmpty) continue;
         List<String> parts = line.split(',');
         if (parts.length < 3) continue;
+
+        final double? dbVal = double.tryParse(parts[1]);
+        if (dbVal == null || dbVal.isNaN || dbVal.isInfinite || dbVal < 0.0 || dbVal > 150.0) {
+          continue; // Drop corrupted values
+        }
+
         result.add({
           'timestamp': DateTime.fromMillisecondsSinceEpoch(int.parse(parts[0])),
-          'db': double.parse(parts[1]).round(),
+          'db': dbVal.round(),
           'peak': int.parse(parts[2]),
         });
       }

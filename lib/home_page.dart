@@ -344,9 +344,11 @@ class _HomePageState extends State<HomePage> {
                       SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        child: ExcludeSemantics(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
                         ),
                       ),
                       SizedBox(width: 12),
@@ -511,6 +513,16 @@ class LucePage extends StatelessWidget {
     final isOld = lastUpdate != null &&
         DateTime.now().difference(lastUpdate!).inHours >= 2;
 
+    double maxVal = 100.0;
+    if (!isDataEmpty) {
+      for (var d in data) {
+        final clear = (d['clear'] as num).toDouble();
+        if (clear > maxVal) {
+          maxVal = clear;
+        }
+      }
+    }
+
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.all(16.0),
@@ -552,9 +564,11 @@ class LucePage extends StatelessWidget {
                           intervalType: DateTimeIntervalType.auto,
                           majorGridLines: const MajorGridLines(width: 0),
                         ),
-                        primaryYAxis: const NumericAxis(
-                          title: AxisTitle(text: 'Intensità (lux)'),
-                          majorGridLines: MajorGridLines(width: 1, color: Color(0xFFF1F1F1)),
+                        primaryYAxis: NumericAxis(
+                          title: const AxisTitle(text: 'Intensità (lux)'),
+                          majorGridLines: const MajorGridLines(width: 1, color: Color(0xFFF1F1F1)),
+                          minimum: 0,
+                          maximum: maxVal * 1.1,
                         ),
                         series: <CartesianSeries>[
                           // Linea Luce Artificiale (Rosso)
@@ -757,6 +771,16 @@ class SuonoPage extends StatelessWidget {
     final isOld = lastUpdate != null &&
         DateTime.now().difference(lastUpdate!).inHours >= 2;
 
+    double maxVal = 80.0;
+    if (!isDataEmpty) {
+      for (var d in data) {
+        final db = (d['db'] as num).toDouble();
+        if (db > maxVal) {
+          maxVal = db;
+        }
+      }
+    }
+
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.all(16.0),
@@ -795,9 +819,11 @@ class SuonoPage extends StatelessWidget {
                         primaryXAxis: DateTimeAxis(
                           majorGridLines: const MajorGridLines(width: 0),
                         ),
-                        primaryYAxis: const NumericAxis(
-                          title: AxisTitle(text: 'Volume (dB)'),
-                          majorGridLines: MajorGridLines(width: 1, color: Color(0xFFF1F1F1)),
+                        primaryYAxis: NumericAxis(
+                          title: const AxisTitle(text: 'Volume (dB)'),
+                          majorGridLines: const MajorGridLines(width: 1, color: Color(0xFFF1F1F1)),
+                          minimum: 0,
+                          maximum: maxVal * 1.1 > 150 ? 150 : maxVal * 1.1,
                         ),
                         series: <CartesianSeries>[
                           // Area con gradiente per i decibel
@@ -1388,11 +1414,13 @@ class StressMelatoninaPage extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  CircularProgressIndicator(
-                    value: progressValue,
-                    strokeWidth: 8,
-                    backgroundColor: Colors.grey.shade100,
-                    valueColor: AlwaysStoppedAnimation<Color>(color),
+                  ExcludeSemantics(
+                    child: CircularProgressIndicator(
+                      value: progressValue,
+                      strokeWidth: 8,
+                      backgroundColor: Colors.grey.shade100,
+                      valueColor: AlwaysStoppedAnimation<Color>(color),
+                    ),
                   ),
                   Center(
                     child: Text(
@@ -1449,11 +1477,13 @@ class StressMelatoninaPage extends StatelessWidget {
           const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: penalty,
-              minHeight: 6,
-              backgroundColor: const Color(0xFFF3F6FA),
-              valueColor: AlwaysStoppedAnimation<Color>(color),
+            child: ExcludeSemantics(
+              child: LinearProgressIndicator(
+                value: penalty,
+                minHeight: 6,
+                backgroundColor: const Color(0xFFF3F6FA),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
             ),
           ),
         ],
