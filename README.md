@@ -51,56 +51,54 @@ A proprietary app-side algorithm cross-references ambient light exposure (especi
 * **Stress Index**: computed based on ambient noise pollution and excessive light exposure.
 * **Melatonin Inhibition**: derived from the 440nm blue light intensity, crucial for evaluating sleep quality and circadian rhythm disruption.
 
----
-
-## ⚠️ Hardware Alarm "Too Blue" (AS7341 Interrupt)
-
-A standout feature of this project is the ultra-fast, low-power handling of the **"Too Blue"** event. When the user is exposed to excessive blue light (which is harmful to the retina and disrupts sleep), the system triggers an immediate hardware interrupt, bypassing periodic telemetry polling.
-
-> [!IMPORTANT]
-> **Interrupt Chain Breakdown:**
-> 1. **Hardware Detection (AS7341):** The sensor is configured via the `CFG12` register on the **F2 channel (440nm)** with a high threshold set to **14400** (`0x3840`) and persistence set to **5 cycles** (`PERS` register set to `0x05`) to prevent false positives.
-> 2. **Physical Signaling:** When the threshold is exceeded, the sensor's physical `INT` pin is asserted **LOW** (active-low).
-> 3. **EXTI Capture (STM32U575):** The pin is routed to port `PB5` on the microcontroller, configured as **EXTI Line 5 (Falling Edge)**. The interrupt is assigned the highest priority in the NVIC.
-> 4. **Immediate BLE Notification:** The interrupt service routine (ISR) flags the alert by setting `as7341_int_alarm = 1`. During the next cycle of the finite state machine (FSM) in `main.c`, the microcontroller transmits a special 3-byte packet `[123, 9, 125]` (ASCII: `{ \t }`) via the RN4871 BLE module.
-> 5. **Local Notification (Flutter App):** The mobile app's `MyBleManager` intercepts this sequence instantly, clears the alarm signature from the buffer, and fires a native push notification using `NotificationService` to warn the user immediately.
-
-```
-+------------------+         INT Pin (LOW)         +--------------------+
-|  AS7341 Sensor   | ----------------------------> | STM32U575 (EXTI 5) |
-| (F2 > 14400 cnt) |                               +---------+----------+
-+------------------+                                         |
-                                                    Send alarm via BLE
-                                                    [123, 9, 125] ({ \t })
-                                                             |
-                                                             v
-+------------------+       Trigger Notification    +--------------------+
-|  User Notified   | <---------------------------- | Flutter App        |
-|   "Too Blue!"    |          Local Push           | (MyBleManager RX)  |
-+------------------+                               +--------------------+
-```
 
 ---
 
 ## 📂 Repository Directory Structure
 
-Here is the directory layout of the Flutter mobile application source code (`smart_wearables_app`):
+Here is the directory layout of the repository and the Flutter mobile application source code:
 
 ```text
-lib/
-├── connection/
-│   ├── connection_page.dart     # UI for BLE scanning, pairing, and connection management
-│   ├── message_type.dart        # Enum for supported message types (PPG, ECG, HAR, Battery, etc.)
-│   ├── messages.dart            # Command and sensor data packet structures
-│   ├── my_ble_manager.dart      # Core BLE manager (scanning, connection, RX packet parsing)
-│   └── stream.dart              # Stream utilities for continuous data flow
-├── services/
-│   ├── data_parsing.dart        # Structured binary parser for Spectrometer and Microphone dumps
-│   ├── notification_service.dart# Local push notifications integration via flutter_local_notifications
-│   └── storage_service.dart     # Local persistent storage of CSV logs for historical samples
-├── home_page.dart               # Main tabbed dashboard (LucePage, SuonoPage, StressMelatoninaPage)
-└── main.dart                    # Application entry point (initializes services and graphical themes)
+.
+├── assets/
+│   ├── spectrometer_data.csv    # Bundled simulated spectrometer log for Demo Mode
+│   └── microphone_data.csv      # Bundled simulated microphone log for Demo Mode
+├── lib/
+│   ├── connection/
+│   │   ├── connection_page.dart # UI for BLE scanning, pairing, and connection management
+│   │   ├── message_type.dart    # Enum for supported message types (PPG, ECG, HAR, Battery, etc.)
+│   │   ├── messages.dart        # Command and sensor data packet structures
+│   │   ├── my_ble_manager.dart  # Core BLE manager (scanning, connection, RX packet parsing)
+│   │   └── stream.dart          # Stream utilities for continuous data flow
+│   ├── services/
+│   │   ├── data_parsing.dart    # Structured binary parser for Spectrometer and Microphone dumps
+│   │   ├── notification_service.dart # Local push notifications integration via flutter_local_notifications
+│   │   └── storage_service.dart # Local persistent storage of CSV logs and asset demo-loaders
+│   ├── home_page.dart           # Main tabbed dashboard (supports Demo Mode UI toggle and banner)
+│   └── main.dart                # Application entry point (initializes services and graphical themes)
+├── generate_mock_data.py        # Python script simulating 8h construction worker shift (CSV, BIN, PNG)
+└── pubspec.yaml                 # Flutter configuration (declares csv assets)
 ```
+
+---
+
+## 🧪 Mock Data Generator & Interactive Demo Mode
+
+To allow testing and demonstration of the application's graphical visualization without requiring a physical STM32 connection, the repository includes a custom simulation and demo environment.
+
+### 1. 🐍 Python Mock Data Generator (`generate_mock_data.py`)
+A standalone Python script simulates a realistic **8-hour shift** (08:00 - 16:00) of a construction worker exposed to high noise levels (heavy machinery/drills) and high blue light radiation (outdoor sunlight and electric arc welding):
+* **Frequencies:** Generates data points at configurable 10-second intervals.
+* **Output Files (saved in `mock_output/`):**
+  * `spectrometer_data.csv` and `microphone_data.csv`: Formatted exactly as the local database files expected by the app.
+  * `spectrometer_dump.bin` (40.3 KB) and `microphone_dump.bin` (25.9 KB): Raw binary structures mapped to the firmware packets (14-byte and 9-byte records in Little Endian).
+  * `sensor_data_visualization.png`: A dark-theme plot visualizing the 8-hour shift profiles (requires `pip install matplotlib`).
+
+### 2. 🧪 In-App Demo Mode
+A toggle switch is integrated into the Flutter app to easily switch between live hardware readings and the simulated dataset:
+* **Activation:** Tap the **Science/Flask icon** (`Icons.science`) in the top actions bar of the home screen.
+* **Visual Indication:** When active, a purple banner (`MODALITÀ DEMO ATTIVA`) is displayed at the top, and all charts load data from the bundled `assets/*.csv` files.
+* **Safe Bypass:** Toggling Demo Mode is non-destructive (it does not overwrite actual local logs) and disables BLE download actions to prevent mock/real data interference.
 
 ---
 
@@ -115,7 +113,7 @@ lib/
 
 1. Clone the repository to your machine:
    ```bash
-   git clone https://github.com/your-username/SWDP.git
+   git clone https://github.com/X3T4K/SWDP.git
    cd SWDP
    ```
 
@@ -141,13 +139,6 @@ The application automatically logs data in the secure app-specific directories p
 
 ---
 
-## 🛠️ STM32U575 Firmware Integration Notes
-The firmware for the companion electronic board must implement:
-1. Driver initialization for the **AS7341** spectrometer via I2C (default address `0x39`).
-2. Configuration of the `CFG12` register (`0xB5`) to `0x01` to map the F2 channel (440nm) as the spectral interrupt source.
-3. EXTI line 5 interrupt routine mapped to pin `PB5` to transmit the special alarm packet `[123, 9, 125]`, and immediately clear the interrupt flag on the spectrometer by reading and rewriting the `STATUS` register (`0x93`).
-
----
 
 ## 🤝 Contributing
 Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
